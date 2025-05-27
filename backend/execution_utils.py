@@ -25,11 +25,22 @@ DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
     "show firewall service custom",
     "show firewall service group",
     "get router info routing-table all",
-    "execute log display event 20", # Lay 20 log event
+    "diagnose log display event --view-limit 20", # Sua lai, them dau phay
     "get system dns",
-    "get system dhcp server"
+    "get system dhcp server",
+    "diagnose sys session list",
+    # -- 10 New commands (examples, replace as needed) --
+    "get system admin list",
+    "show vpn ssl settings",
+    "get vpn ipsec tunnel summary",
+    "show user local",
+    "show user group",
+    "get system ha status",
+    "diagnose hardware deviceinfo nic",
+    "get webfilter profile",
+    "get application list",
+    "show log setting"
     #"diagnose debug report", # Lenh nay rat dai, can nhac
-    "diagnose sys session list" # Lenh nay cung rat dai
 ]
 
 # Ham trich xuat khoi ma
@@ -130,8 +141,6 @@ def execute_fortigate_commands(commands_string, fortigate_config):
     except ValueError:
         return {"output": "", "error": f"Port SSH không hợp lệ: {port}", "return_code": -1}
 
-    # Duong dan log Netmiko: tu backend/logs/netmiko_session.log
-    # -> ../logs/netmiko_session.log de ra project_root/logs
     log_file_path = os.path.join(os.path.dirname(__file__), '..', 'logs', 'netmiko_session.log')
     os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
 
@@ -206,11 +215,24 @@ def fetch_and_save_fortigate_context(fortigate_config, commands_to_fetch=None):
         logger.error("fetch_and_save_fortigate_context: Thieu hoac cau hinh FortiGate khong hop le.")
         return "Lỗi: Thiếu cấu hình FortiGate để lấy ngữ cảnh."
 
-    if commands_to_fetch is None:
-        commands_to_fetch = DEFAULT_FORTIGATE_CONTEXT_COMMANDS
+    # Su dung commands_to_fetch neu dc cung cap, ko thi fallback DEFAULT_FORTIGATE_CONTEXT_COMMANDS
+    effective_commands = commands_to_fetch
+    if not effective_commands: # Ktra neu list rong hoac None
+        logger.warning("fetch_and_save_fortigate_context: Khong co lenh nao duoc cung cap, su dung default set.")
+        effective_commands = DEFAULT_FORTIGATE_CONTEXT_COMMANDS
+    
+    if not effective_commands: # Van ko co lenh nao (VD: default cung rong)
+         logger.warning("fetch_and_save_fortigate_context: Khong co lenh nao de thuc thi (ca cung cap va default).")
+         return "Thông báo: Không có lệnh nào được chọn để lấy ngữ cảnh FortiGate."
 
-    commands_string = "\n".join(commands_to_fetch)
-    logger.info(f"Bat dau lay ngu canh FortiGate voi cac lenh:\n{commands_string[:500]}...") # Log 1 phan
+
+    commands_string = "\n".join(effective_commands)
+    logger.info(f"Bat dau lay ngu canh FortiGate voi {len(effective_commands)} lenh...")
+    if len(effective_commands) <= 10: # Log het neu it
+        logger.info(f"Cac lenh:\n{commands_string}")
+    else: # Log 1 phan neu nhieu
+        logger.info(f"Cac lenh (mot phan):\n{commands_string[:500]}...")
+
 
     result = execute_fortigate_commands(commands_string, fortigate_config)
 
@@ -226,8 +248,6 @@ def fetch_and_save_fortigate_context(fortigate_config, commands_to_fetch=None):
         context_content = "Khong lay duoc thong tin ngu canh nao tu FortiGate."
         logger.warning("Khong co output nao tu viec lay ngu canh FortiGate.")
 
-    # Thu muc logs o goc project (cung cap voi thu muc backend, frontend)
-    # current_app.root_path la backend/
     project_log_dir = os.path.abspath(os.path.join(current_app.root_path, '..', 'logs'))
 
     if not os.path.exists(project_log_dir):
@@ -236,7 +256,7 @@ def fetch_and_save_fortigate_context(fortigate_config, commands_to_fetch=None):
             logger.info(f"Da tao thu muc log du an: {project_log_dir}")
         except OSError as e:
             logger.error(f"Khong the tao thu muc log du an '{project_log_dir}': {e}")
-            return context_content # Van tra ve content
+            return context_content
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     context_file_path = os.path.join(project_log_dir, f"fortigate_context_{timestamp}.txt")
@@ -245,7 +265,8 @@ def fetch_and_save_fortigate_context(fortigate_config, commands_to_fetch=None):
         with open(context_file_path, 'w', encoding='utf-8') as f:
             f.write(f"--- FortiGate Context Snapshot at {timestamp} ---\n")
             f.write(f"Target: {fortigate_config.get('ipHost', 'N/A')}\n")
-            f.write("--- Commands Executed ---\n")
+            f.write(f"User: {fortigate_config.get('username', 'N/A')}\n") # Them username
+            f.write(f"--- Commands Executed ({len(effective_commands)} commands) ---\n")
             f.write(commands_string + "\n")
             f.write("--- Output ---\n")
             f.write(context_content)
@@ -304,7 +325,6 @@ def execute_local_script(code_to_execute, file_extension, run_as_admin):
                     admin_warning = f"Ko the check admin ({admin_check_e}). Thuc thi quyen thuong."
             elif backend_os in ["linux", "darwin"]: # darwin la macos
                 try:
-                    # Ktra sudo co ton tai ko
                     subprocess.run(['which', 'sudo'], check=True, capture_output=True, text=True, errors='ignore')
                     command.insert(0, 'sudo')
                 except (FileNotFoundError, subprocess.CalledProcessError):

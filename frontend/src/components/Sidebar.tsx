@@ -2,7 +2,7 @@
 import React, { ChangeEvent } from 'react';
 import { FiX } from 'react-icons/fi';
 import SettingsPanel from './SettingsPanel';
-import { ModelConfig, TargetOS, FortiGateConfig } from '../App'; // Them FortiGateConfig
+import { ModelConfig, TargetOS, FortiGateConfig } from '../App';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -20,14 +20,20 @@ interface SidebarProps {
   targetOs: TargetOS;
   fileType: string;
   customFileName: string;
-  fortiGateConfig: FortiGateConfig; // Them prop nay
+  fortiGateConfig: FortiGateConfig;
+  // Prop moi cho cmd FGT context
+  fortiGateContextCommandsConfig: {
+    list: string[];
+    selected: Record<string, boolean>;
+  };
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
   isOpen, onClose, modelConfig, onConfigChange, onSaveSettings, isBusy,
   runAsAdmin, uiApiKey, useUiApiKey, onApplyUiApiKey, onUseEnvKey,
   targetOs, fileType, customFileName,
-  fortiGateConfig, // Nhan prop nay
+  fortiGateConfig,
+  fortiGateContextCommandsConfig, // Nhan prop moi
 }) => {
 
   return (
@@ -52,7 +58,9 @@ const Sidebar: React.FC<SidebarProps> = ({
             targetOs={targetOs}
             fileType={fileType}
             customFileName={customFileName}
-            fortiGateConfig={fortiGateConfig} // Truyen xuong
+            fortiGateConfig={fortiGateConfig}
+            // Truyen prop moi xuong
+            fortiGateContextCommandsConfig={fortiGateContextCommandsConfig}
           />
         </div>
       </aside>

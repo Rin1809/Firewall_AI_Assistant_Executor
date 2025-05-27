@@ -5,6 +5,7 @@ import Sidebar from './components/Sidebar';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
+import { FiCheckSquare, FiSquare } from 'react-icons/fi'; // Cho nut select all
 
 // --- Dinh nghia kieu du lieu (Interfaces) ---
 export interface ExecutionResult {
@@ -14,7 +15,7 @@ export interface ExecutionResult {
   return_code: number;
   codeThatFailed?: string;
   warning?: string;
-  executed_file_type?: string; // py, sh, bat, fortios
+  executed_file_type?: string;
 }
 
 export interface ReviewResult {
@@ -28,7 +29,7 @@ export interface ModelConfig {
     topP: number;
     topK: number;
     safetySetting: string;
-    api_key?: string; // UI key
+    api_key?: string;
 }
 
 export interface DebugResult {
@@ -36,7 +37,7 @@ export interface DebugResult {
     corrected_code: string | null;
     suggested_package?: string;
     error?: string;
-    original_language?: string; // py, sh, bat, fortios
+    original_language?: string;
 }
 
 export interface ExplainResult {
@@ -67,18 +68,33 @@ export interface ConversationBlock {
     id: string;
     timestamp: string;
     isNew?: boolean;
-    generatedType?: string; // .py, .bat, .sh, fortios
+    generatedType?: string;
 }
 // ---------------------------------------------
 
+// --- CONSTANTS ---
 const MODEL_NAME_STORAGE_KEY = 'geminiExecutorModelName';
 const FORTIGATE_CONFIG_STORAGE_KEY = 'geminiExecutorFortiGateConfig';
 const TARGET_OS_STORAGE_KEY = 'geminiExecutorTargetOS';
 const FILE_TYPE_STORAGE_KEY = 'geminiExecutorFileType';
 const CUSTOM_FILE_NAME_STORAGE_KEY = 'geminiExecutorCustomFileName';
 const FGT_INTERACTIVE_MODE_STORAGE_KEY = 'geminiExecutorFgtInteractiveMode';
+const FGT_CONTEXT_COMMANDS_STORAGE_KEY = 'geminiExecutorFgtContextCommands'; // Luu lua chon cmd FGT
 
 const NEW_BLOCK_ANIMATION_DURATION = 500; // ms
+
+// Danh sach lenh mac dinh cho FGT context (giong backend)
+const DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
+    "get system status", "get system performance status", "show system interface",
+    "show firewall policy", "show firewall address", "show firewall vip",
+    "show firewall ippool", "show firewall service custom", "show firewall service group",
+    "get router info routing-table all", "diagnose log display event --view-limit 20",
+    "get system dns", "get system dhcp server", "diagnose sys session list",
+    "get system admin list", "show vpn ssl settings", "get vpn ipsec tunnel summary",
+    "show user local", "show user group", "get system ha status",
+    "diagnose hardware deviceinfo nic", "get webfilter profile",
+    "get application list", "show log setting"
+];
 
 function App() {
   const [prompt, setPrompt] = useState<string>('');
@@ -115,6 +131,23 @@ function App() {
       return savedMode === 'true';
   });
 
+  // State luu tru cac lenh FGT context da chon
+  const [fortiGateContextCommands, setFortiGateContextCommands] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY);
+    if (saved) {
+        try { return JSON.parse(saved); } catch (e) { console.error("Loi phan tich cmd FGT context da luu", e); }
+    }
+    const initial: Record<string, boolean> = {};
+    DEFAULT_FORTIGATE_CONTEXT_COMMANDS.forEach(cmd => initial[cmd] = true); // Mac dinh chon het
+    return initial;
+  });
+
+  // Luu lua chon cmd FGT context vao localStorage
+  useEffect(() => {
+    localStorage.setItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY, JSON.stringify(fortiGateContextCommands));
+  }, [fortiGateContextCommands]);
+
+
    useEffect(() => {
         const timers: NodeJS.Timeout[] = [];
         conversation.filter(b => b.isNew).forEach(block => {
@@ -146,6 +179,20 @@ function App() {
   const handleConfigChange = useCallback((e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
+
+    // Xu ly thay doi lua chon cmd FGT context
+    if (name.startsWith('fgtCtxCmd_')) {
+        const cmd = name.substring('fgtCtxCmd_'.length);
+        if (cmd === 'selectAll') { // Xu ly nut select all
+            const newStates: Record<string, boolean> = {};
+            DEFAULT_FORTIGATE_CONTEXT_COMMANDS.forEach(c => newStates[c] = checked);
+            setFortiGateContextCommands(newStates);
+        } else {
+            setFortiGateContextCommands(prev => ({ ...prev, [cmd]: checked }));
+        }
+        return; // Ko xu ly tiep cac case khac
+    }
+
 
     if (name === 'targetOs') {
       const newTargetOs = value as TargetOS;
@@ -228,6 +275,17 @@ function App() {
                  toast.error("Thiếu IP/Host & Username FortiGate trong Cài đặt để lấy ngữ cảnh.");
             }
         }
+        // Them ds lenh ctx FGT da chon vao body request
+        const selectedCommands = Object.entries(fortiGateContextCommands)
+                                     .filter(([, isSelected]) => isSelected)
+                                     .map(([cmd]) => cmd);
+        if (selectedCommands.length > 0) {
+            finalBody.fortigate_selected_context_commands = selectedCommands;
+        } else {
+            // Gui list rong neu ko chon lenh nao, backend se tu xu ly (co the dung default hoac ko lay ctx)
+            finalBody.fortigate_selected_context_commands = [];
+        }
+
         if (endpoint === 'debug') finalBody.fortigate_config_for_context = fortiGateConfig;
         else finalBody.fortigate_config = fortiGateConfig;
     }
@@ -259,9 +317,8 @@ function App() {
          if (error.name === 'AbortError') throw new Error(`Yêu cầu đến /api/${endpoint} quá thời gian.`);
          throw error;
     }
-  }, [modelConfig, useUiApiKey, uiApiKey, fortiGateConfig]);
+  }, [modelConfig, useUiApiKey, uiApiKey, fortiGateConfig, fortiGateContextCommands]);
 
-  // Dinh nghia handleGenerate va handleFortiGateChat TRUOC handleGenerateOrFortiGateChat
   const handleGenerate = useCallback(async (currentPrompt: string) => {
     setIsLoading(true);
     const now = new Date().toISOString();
@@ -298,10 +355,9 @@ function App() {
       toast.error(errorMessage);
       setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: Date.now().toString() + '_err', timestamp: new Date().toISOString(), isNew: true } : b));
     } finally { setIsLoading(false); }
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [sendApiRequest, conversation, setPrompt, fileType, customFileName, targetOs, isFortiGateInteractiveMode, fortiGateConfig]);
+  }, [sendApiRequest, conversation, setPrompt, fileType, customFileName, targetOs, isFortiGateInteractiveMode, fortiGateConfig, fortiGateContextCommands]);
 
-const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
+  const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
     setIsLoading(true);
     const now = new Date().toISOString();
     const newCollapsedStates: Record<string, boolean> = {};
@@ -364,16 +420,13 @@ const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
       toast.error(errorMessage);
       setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: Date.now().toString() + '_chaterr', timestamp: new Date().toISOString(), isNew: true } : b));
     } finally { setIsLoading(false); }
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [sendApiRequest, conversation, setPrompt, fortiGateConfig]);
+  }, [sendApiRequest, conversation, setPrompt, fortiGateConfig, fortiGateContextCommands]);
 
-  // Ham dieu phoi chinh
   const handleGenerateOrFortiGateChat = useCallback(async (currentPrompt: string) => {
     if (!currentPrompt.trim()) {
         toast.warn('Vui lòng nhập yêu cầu.');
         return;
     }
-
     if (targetOs === 'fortios') {
         if (isFortiGateInteractiveMode) {
             await handleGenerate(currentPrompt);
@@ -383,221 +436,216 @@ const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
     } else {
         await handleGenerate(currentPrompt);
     }
-}, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat]);
+  }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat]);
 
+  const handleReviewCode = useCallback(async (codeToReview: string | null, blockId: string) => {
+    if (!codeToReview) { toast.warn("Ko có mã/lệnh để review."); return; }
+    const blockToReview = conversation.find(b => b.id === blockId);
+    const fileTypeToSend = blockToReview?.generatedType || 'py';
 
-    const handleReviewCode = useCallback(async (codeToReview: string | null, blockId: string) => {
-        if (!codeToReview) { toast.warn("Ko có mã/lệnh để review."); return; }
-        const blockToReview = conversation.find(b => b.id === blockId);
-        const fileTypeToSend = blockToReview?.generatedType || 'py';
+    setIsReviewing(true);
+    const now = new Date().toISOString();
+    const loadingId = Date.now().toString() + '_rload';
+    const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang đánh giá...', id: loadingId, timestamp: now, isNew: true };
+    const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
+    const newConv = [...conversation];
+    if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
+    setConversation(newConv);
 
-        setIsReviewing(true);
-        const now = new Date().toISOString();
-        const loadingId = Date.now().toString() + '_rload';
-        const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang đánh giá...', id: loadingId, timestamp: now, isNew: true };
-        const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-        const newConv = [...conversation];
-        if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-        setConversation(newConv);
+    try {
+        const data: ReviewResult = await sendApiRequest('review', { code: codeToReview, file_type: fileTypeToSend });
+        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data, id: Date.now().toString() + '_r', timestamp: new Date().toISOString(), isNew: true } : b));
+        toast.success("Đã đánh giá xong!");
+    } catch (err: any) {
+        const errorData: ReviewResult = { error: err.message || 'Lỗi review.' };
+        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data: errorData, id: Date.now().toString() + '_rerr', timestamp: new Date().toISOString(), isNew: true } : b));
+        toast.error(err.message || 'Lỗi review.');
+    } finally { setIsReviewing(false); }
+  }, [sendApiRequest, conversation]);
 
-        try {
-            const data: ReviewResult = await sendApiRequest('review', { code: codeToReview, file_type: fileTypeToSend });
-            setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data, id: Date.now().toString() + '_r', timestamp: new Date().toISOString(), isNew: true } : b));
-            toast.success("Đã đánh giá xong!");
-        } catch (err: any) {
-            const errorData: ReviewResult = { error: err.message || 'Lỗi review.' };
-            setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data: errorData, id: Date.now().toString() + '_rerr', timestamp: new Date().toISOString(), isNew: true } : b));
-            toast.error(err.message || 'Lỗi review.');
-        } finally { setIsReviewing(false); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [sendApiRequest, conversation]);
+  const handleExecute = useCallback(async (codeToExecute: string | null, blockId: string) => {
+    if (!codeToExecute) { toast.warn("Ko có mã/lệnh để thực thi."); return; }
+    const blockToExecute = conversation.find(b => b.id === blockId);
+    const execType = blockToExecute?.generatedType || 'py';
 
-    const handleExecute = useCallback(async (codeToExecute: string | null, blockId: string) => {
-        if (!codeToExecute) { toast.warn("Ko có mã/lệnh để thực thi."); return; }
-        const blockToExecute = conversation.find(b => b.id === blockId);
-        const execType = blockToExecute?.generatedType || 'py';
+    setIsExecuting(true);
+    const isFGTExecution = execType === 'fortios';
+    const toastMsg = isFGTExecution ? 'Đang gửi lệnh tới FortiGate...' : `Đang thực thi ${runAsAdmin ? ' với quyền Admin/Root' : ''}...`;
+    const toastId = toast.loading(toastMsg);
+    const executionBlockId = Date.now().toString() + '_ex';
+    const now = new Date().toISOString();
+    const executionBlockBase: Partial<ConversationBlock> = { type: 'execution', id: executionBlockId, timestamp: now, isNew: true };
+    const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
+    const newConv = [...conversation];
+    let resultData: ExecutionResult | null = null;
 
-        setIsExecuting(true);
-        const isFGTExecution = execType === 'fortios';
-        const toastMsg = isFGTExecution ? 'Đang gửi lệnh tới FortiGate...' : `Đang thực thi ${runAsAdmin ? ' với quyền Admin/Root' : ''}...`;
-        const toastId = toast.loading(toastMsg);
-        const executionBlockId = Date.now().toString() + '_ex';
-        const now = new Date().toISOString();
-        const executionBlockBase: Partial<ConversationBlock> = { type: 'execution', id: executionBlockId, timestamp: now, isNew: true };
-        const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-        const newConv = [...conversation];
-        let resultData: ExecutionResult | null = null;
+    const endpoint = 'execute';
+    let payload: any = { code: codeToExecute, file_type: execType };
+    if (!isFGTExecution) {
+        payload.run_as_admin = runAsAdmin;
+    }
 
-        const endpoint = 'execute';
-        let payload: any = { code: codeToExecute, file_type: execType };
-        if (!isFGTExecution) {
-            payload.run_as_admin = runAsAdmin;
+    try {
+        const data: ExecutionResult = await sendApiRequest(endpoint, payload, isFGTExecution);
+        resultData = { ...data, codeThatFailed: codeToExecute, executed_file_type: execType };
+
+        if (data.warning) toast.warning(data.warning, { autoClose: 7000, toastId: `warning-${executionBlockId}` });
+        const stdoutErrorKeywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
+        const stdoutLooksLikeError = data.output?.trim() && stdoutErrorKeywords.some(kw => data.output.toLowerCase().includes(kw));
+        const hasError = data.return_code !== 0 || !!data.error?.trim() || data.return_code === -200 || (isFGTExecution && data.return_code !== 0);
+
+        if (!hasError && !stdoutLooksLikeError) toast.update(toastId, { render: "Thực thi thành công!", type: "success", isLoading: false, autoClose: 3000 });
+        else if (!hasError && stdoutLooksLikeError) toast.update(toastId, { render: "Đã thực thi, output có thể chứa vấn đề.", type: "warning", isLoading: false, autoClose: 5000 });
+        else toast.update(toastId, { render: data.error === 'Timeout' ? "Thực thi quá tgian." : (data.error || "Thực thi thất bại/có lỗi."), type: "error", isLoading: false, autoClose: 5000 });
+
+    } catch (err: any) {
+         resultData = { message: err.message || "Lỗi thực thi.", output: "", error: err.message || "Lỗi không xác định", return_code: -200, codeThatFailed: codeToExecute, executed_file_type: execType };
+        toast.update(toastId, { render: `Lỗi thực thi: ${resultData.error}`, type: "error", isLoading: false, autoClose: 5000 });
+    } finally {
+        setIsExecuting(false);
+        if (resultData) {
+             const blockToAdd = { ...executionBlockBase, data: resultData } as ConversationBlock;
+             if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
+             else setConversation(prev => [...prev, blockToAdd]);
         }
+    }
+  }, [runAsAdmin, conversation, sendApiRequest, fortiGateConfig]);
 
+
+  const handleDebug = useCallback(async (codeToDebug: string | null, lastExecutionResult: ExecutionResult | null, blockId: string) => {
+       const hasErrorSignal = (execResult: ExecutionResult | null): boolean => {
+           if (!execResult) return false;
+           const keywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
+           const isFGTError = execResult.executed_file_type === 'fortios' && execResult.return_code !== 0;
+           return execResult.return_code !== 0 || !!execResult.error?.trim() || execResult.return_code === -200 || isFGTError || (!!execResult.output?.trim() && keywords.some(kw => execResult.output!.toLowerCase().includes(kw)));
+       };
+       if (!codeToDebug || !hasErrorSignal(lastExecutionResult)) { toast.warn("Cần mã/lệnh và kết quả lỗi để gỡ rối."); return; }
+
+       const fileTypeToSend = lastExecutionResult?.executed_file_type || 'py';
+
+       setIsDebugging(true);
+       const now = new Date().toISOString();
+       const loadingId = Date.now().toString() + '_dload';
+       const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang gỡ rối...', id: loadingId, timestamp: now, isNew: true };
+       const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
+       const newConv = [...conversation];
+       if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
+       setConversation(newConv);
+
+       let userPromptForDebug = "(Ko tìm thấy prompt gốc)";
+       let foundExec = false;
+       for (const block of [...conversation].reverse()) {
+            if (!foundExec && block.id === blockId && block.type === 'execution') foundExec = true;
+            if (foundExec && block.type === 'user') { userPromptForDebug = block.data; break; }
+       }
+
+       try {
+           const payload: any = {
+               prompt: userPromptForDebug, code: codeToDebug,
+               stdout: lastExecutionResult?.output ?? '', stderr: lastExecutionResult?.error ?? '',
+               file_type: fileTypeToSend,
+           };
+
+           const data: DebugResult = await sendApiRequest('debug', payload);
+           setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data, id: Date.now().toString() + '_dbg', timestamp: new Date().toISOString(), isNew: true } : b));
+           toast.success("Đã phân tích gỡ rối!");
+       } catch (err: any) {
+           const errorData: DebugResult = { explanation: null, corrected_code: null, error: err.message };
+           setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data: errorData, id: Date.now().toString() + '_dbgerr', timestamp: new Date().toISOString(), isNew: true } : b));
+           toast.error(`Gỡ rối thất bại: ${err.message}`);
+       } finally { setIsDebugging(false); }
+   }, [conversation, sendApiRequest, fortiGateConfig, fortiGateContextCommands]);
+
+   const applyCorrectedCode = useCallback((correctedCode: string, originalDebugBlockId: string) => {
+       const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
+       const newGeneratedType = debugBlock?.data?.original_language || 'py';
+
+       const newBlock: ConversationBlock = {
+           type: 'ai-code', data: correctedCode, generatedType: newGeneratedType,
+           id: Date.now().toString() + '_ac', timestamp: new Date().toISOString(), isNew: true
+       };
+       const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
+       const newConv = [...conversation];
+       if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, newBlock); else newConv.push(newBlock);
+       setConversation(newConv);
+       toast.success("Đã áp dụng code sửa lỗi.");
+   }, [conversation]);
+
+  const handleInstallPackage = useCallback(async (packageName: string, originalDebugBlockId: string) => {
+     if (!packageName) { toast.warn("Ko có tên package."); return; }
+     setIsInstalling(true);
+     const toastId = toast.loading(`Đang cài ${packageName}...`);
+     const installBlockId = Date.now().toString() + '_inst';
+     const now = new Date().toISOString();
+     const installBlockBase: Partial<ConversationBlock> = { type: 'installation', id: installBlockId, timestamp: now, isNew: true };
+     const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
+     const newConv = [...conversation];
+     let resultData : InstallationResult | null = null;
+
+     try {
+         const response = await fetch('http://localhost:5001/api/install_package', {
+             method: 'POST', headers: { 'Content-Type': 'application/json' },
+             body: JSON.stringify({ package_name: packageName }),
+         });
+         const data: InstallationResult = await response.json();
+         resultData = { ...data, package_name: packageName };
+         if (data.success) toast.update(toastId, { render: `Cài ${packageName} thành công!`, type: "success", isLoading: false, autoClose: 4000 });
+         else { const errMsg = data.error || data.output || "Cài đặt thất bại."; toast.update(toastId, { render: `Cài ${packageName} thất bại. ${errMsg.split('\n')[0]}`, type: "error", isLoading: false, autoClose: 6000 }); }
+     } catch (err: any) {
+         resultData = { success: false, message: `Lỗi kết nối khi cài.`, output: "", error: err.message, package_name: packageName };
+         toast.update(toastId, { render: `Lỗi cài đặt: ${err.message}`, type: "error", isLoading: false, autoClose: 5000 });
+     } finally {
+         setIsInstalling(false);
+          if (resultData) {
+              const blockToAdd = { ...installBlockBase, data: resultData } as ConversationBlock;
+              if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
+              else setConversation(prev => [...prev, blockToAdd]);
+          }
+     }
+  }, [conversation]);
+
+  const handleExplain = useCallback(async (blockId: string, contentToExplain: any, context: string) => {
+    const blockToExplain = conversation.find(b => b.id === blockId);
+    const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined;
+
+    setIsExplaining(true);
+    const now = new Date().toISOString();
+    const loadingId = Date.now().toString() + '_explload';
+    const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích...`, id: loadingId, timestamp: now, isNew: true };
+    const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
+    const newConv = [...conversation];
+    if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
+    setConversation(newConv);
+
+    let processedContent = contentToExplain;
+    if (typeof contentToExplain === 'object' && contentToExplain !== null) {
         try {
-            const data: ExecutionResult = await sendApiRequest(endpoint, payload, isFGTExecution);
-            resultData = { ...data, codeThatFailed: codeToExecute, executed_file_type: execType };
-
-            if (data.warning) toast.warning(data.warning, { autoClose: 7000, toastId: `warning-${executionBlockId}` });
-            const stdoutErrorKeywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
-            const stdoutLooksLikeError = data.output?.trim() && stdoutErrorKeywords.some(kw => data.output.toLowerCase().includes(kw));
-            const hasError = data.return_code !== 0 || !!data.error?.trim() || data.return_code === -200 || (isFGTExecution && data.return_code !== 0);
-
-            if (!hasError && !stdoutLooksLikeError) toast.update(toastId, { render: "Thực thi thành công!", type: "success", isLoading: false, autoClose: 3000 });
-            else if (!hasError && stdoutLooksLikeError) toast.update(toastId, { render: "Đã thực thi, output có thể chứa vấn đề.", type: "warning", isLoading: false, autoClose: 5000 });
-            else toast.update(toastId, { render: data.error === 'Timeout' ? "Thực thi quá tgian." : (data.error || "Thực thi thất bại/có lỗi."), type: "error", isLoading: false, autoClose: 5000 });
-
-        } catch (err: any) {
-             resultData = { message: err.message || "Lỗi thực thi.", output: "", error: err.message || "Lỗi không xác định", return_code: -200, codeThatFailed: codeToExecute, executed_file_type: execType };
-            toast.update(toastId, { render: `Lỗi thực thi: ${resultData.error}`, type: "error", isLoading: false, autoClose: 5000 });
-        } finally {
-            setIsExecuting(false);
-            if (resultData) {
-                 const blockToAdd = { ...executionBlockBase, data: resultData } as ConversationBlock;
-                 if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
-                 else setConversation(prev => [...prev, blockToAdd]);
+            let contentToSend = { ...contentToExplain };
+            if ((context === 'execution_result' || context === 'debug_result') && 'codeThatFailed' in contentToSend) {
+                delete contentToSend.codeThatFailed;
             }
-        }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [runAsAdmin, conversation, sendApiRequest, fortiGateConfig]);
+            processedContent = JSON.stringify(contentToSend, null, 2);
+        } catch { processedContent = String(contentToExplain); }
+    } else {
+        processedContent = String(contentToExplain);
+    }
 
+    try {
+        const payload:any = {
+            content: processedContent, context,
+        };
+        if (fileTypeToSend) payload.file_type = fileTypeToSend;
 
-      const handleDebug = useCallback(async (codeToDebug: string | null, lastExecutionResult: ExecutionResult | null, blockId: string) => {
-           const hasErrorSignal = (execResult: ExecutionResult | null): boolean => {
-               if (!execResult) return false;
-               const keywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
-               const isFGTError = execResult.executed_file_type === 'fortios' && execResult.return_code !== 0;
-               return execResult.return_code !== 0 || !!execResult.error?.trim() || execResult.return_code === -200 || isFGTError || (!!execResult.output?.trim() && keywords.some(kw => execResult.output!.toLowerCase().includes(kw)));
-           };
-           if (!codeToDebug || !hasErrorSignal(lastExecutionResult)) { toast.warn("Cần mã/lệnh và kết quả lỗi để gỡ rối."); return; }
+        const data: ExplainResult = await sendApiRequest('explain', payload);
+        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data, id: Date.now().toString() + '_exp', timestamp: new Date().toISOString(), isNew: true } : b));
+        toast.success("Đã tạo giải thích!");
+    } catch (err: any) {
+        const errorData: ExplainResult = { error: err.message || 'Lỗi giải thích.' };
+        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data: errorData, id: Date.now().toString() + '_experr', timestamp: new Date().toISOString(), isNew: true } : b));
+        toast.error(err.message || 'Lỗi giải thích.');
+    } finally { setIsExplaining(false); }
+  }, [sendApiRequest, conversation]);
 
-           const fileTypeToSend = lastExecutionResult?.executed_file_type || 'py';
-
-           setIsDebugging(true);
-           const now = new Date().toISOString();
-           const loadingId = Date.now().toString() + '_dload';
-           const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang gỡ rối...', id: loadingId, timestamp: now, isNew: true };
-           const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-           const newConv = [...conversation];
-           if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-           setConversation(newConv);
-
-           let userPromptForDebug = "(Ko tìm thấy prompt gốc)";
-           let foundExec = false;
-           for (const block of [...conversation].reverse()) {
-                if (!foundExec && block.id === blockId && block.type === 'execution') foundExec = true;
-                if (foundExec && block.type === 'user') { userPromptForDebug = block.data; break; }
-           }
-
-           try {
-               const payload: any = {
-                   prompt: userPromptForDebug, code: codeToDebug,
-                   stdout: lastExecutionResult?.output ?? '', stderr: lastExecutionResult?.error ?? '',
-                   file_type: fileTypeToSend,
-               };
-
-               const data: DebugResult = await sendApiRequest('debug', payload);
-               setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data, id: Date.now().toString() + '_dbg', timestamp: new Date().toISOString(), isNew: true } : b));
-               toast.success("Đã phân tích gỡ rối!");
-           } catch (err: any) {
-               const errorData: DebugResult = { explanation: null, corrected_code: null, error: err.message };
-               setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data: errorData, id: Date.now().toString() + '_dbgerr', timestamp: new Date().toISOString(), isNew: true } : b));
-               toast.error(`Gỡ rối thất bại: ${err.message}`);
-           } finally { setIsDebugging(false); }
-       // eslint-disable-next-line react-hooks/exhaustive-deps
-       }, [conversation, sendApiRequest, fortiGateConfig]);
-
-       const applyCorrectedCode = useCallback((correctedCode: string, originalDebugBlockId: string) => {
-           const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
-           const newGeneratedType = debugBlock?.data?.original_language || 'py';
-
-           const newBlock: ConversationBlock = {
-               type: 'ai-code', data: correctedCode, generatedType: newGeneratedType,
-               id: Date.now().toString() + '_ac', timestamp: new Date().toISOString(), isNew: true
-           };
-           const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
-           const newConv = [...conversation];
-           if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, newBlock); else newConv.push(newBlock);
-           setConversation(newConv);
-           toast.success("Đã áp dụng code sửa lỗi.");
-       }, [conversation]);
-
-     const handleInstallPackage = useCallback(async (packageName: string, originalDebugBlockId: string) => {
-         if (!packageName) { toast.warn("Ko có tên package."); return; }
-         setIsInstalling(true);
-         const toastId = toast.loading(`Đang cài ${packageName}...`);
-         const installBlockId = Date.now().toString() + '_inst';
-         const now = new Date().toISOString();
-         const installBlockBase: Partial<ConversationBlock> = { type: 'installation', id: installBlockId, timestamp: now, isNew: true };
-         const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
-         const newConv = [...conversation];
-         let resultData : InstallationResult | null = null;
-
-         try {
-             const response = await fetch('http://localhost:5001/api/install_package', {
-                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                 body: JSON.stringify({ package_name: packageName }),
-             });
-             const data: InstallationResult = await response.json();
-             resultData = { ...data, package_name: packageName };
-             if (data.success) toast.update(toastId, { render: `Cài ${packageName} thành công!`, type: "success", isLoading: false, autoClose: 4000 });
-             else { const errMsg = data.error || data.output || "Cài đặt thất bại."; toast.update(toastId, { render: `Cài ${packageName} thất bại. ${errMsg.split('\n')[0]}`, type: "error", isLoading: false, autoClose: 6000 }); }
-         } catch (err: any) {
-             resultData = { success: false, message: `Lỗi kết nối khi cài.`, output: "", error: err.message, package_name: packageName };
-             toast.update(toastId, { render: `Lỗi cài đặt: ${err.message}`, type: "error", isLoading: false, autoClose: 5000 });
-         } finally {
-             setIsInstalling(false);
-              if (resultData) {
-                  const blockToAdd = { ...installBlockBase, data: resultData } as ConversationBlock;
-                  if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
-                  else setConversation(prev => [...prev, blockToAdd]);
-              }
-         }
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-     }, [conversation]);
-
-    const handleExplain = useCallback(async (blockId: string, contentToExplain: any, context: string) => {
-        const blockToExplain = conversation.find(b => b.id === blockId);
-        const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined;
-
-        setIsExplaining(true);
-        const now = new Date().toISOString();
-        const loadingId = Date.now().toString() + '_explload';
-        const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích...`, id: loadingId, timestamp: now, isNew: true };
-        const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-        const newConv = [...conversation];
-        if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-        setConversation(newConv);
-
-        let processedContent = contentToExplain;
-        if (typeof contentToExplain === 'object' && contentToExplain !== null) {
-            try {
-                let contentToSend = { ...contentToExplain };
-                if ((context === 'execution_result' || context === 'debug_result') && 'codeThatFailed' in contentToSend) {
-                    delete contentToSend.codeThatFailed;
-                }
-                processedContent = JSON.stringify(contentToSend, null, 2);
-            } catch { processedContent = String(contentToExplain); }
-        } else {
-            processedContent = String(contentToExplain);
-        }
-
-        try {
-            const payload:any = {
-                content: processedContent, context,
-            };
-            if (fileTypeToSend) payload.file_type = fileTypeToSend;
-
-            const data: ExplainResult = await sendApiRequest('explain', payload);
-            setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data, id: Date.now().toString() + '_exp', timestamp: new Date().toISOString(), isNew: true } : b));
-            toast.success("Đã tạo giải thích!");
-        } catch (err: any) {
-            const errorData: ExplainResult = { error: err.message || 'Lỗi giải thích.' };
-            setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data: errorData, id: Date.now().toString() + '_experr', timestamp: new Date().toISOString(), isNew: true } : b));
-            toast.error(err.message || 'Lỗi giải thích.');
-        } finally { setIsExplaining(false); }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [sendApiRequest, conversation]);
 
   const isBusy = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
 
@@ -610,7 +658,7 @@ const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
         isBusy={isBusy}
         prompt={prompt}
         setPrompt={setPrompt}
-        onPrimarySubmit={handleGenerateOrFortiGateChat} // Su dung ham dieu phoi
+        onPrimarySubmit={handleGenerateOrFortiGateChat}
         onReview={handleReviewCode}
         onExecute={handleExecute}
         onDebug={handleDebug}
@@ -642,6 +690,11 @@ const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
         fileType={fileType}
         customFileName={customFileName}
         fortiGateConfig={fortiGateConfig}
+        // Truyen state va handler cho cmd FGT context
+        fortiGateContextCommandsConfig={{ // Gom nhom cho de nhin
+          list: DEFAULT_FORTIGATE_CONTEXT_COMMANDS,
+          selected: fortiGateContextCommands,
+        }}
       />
     </div>
   );

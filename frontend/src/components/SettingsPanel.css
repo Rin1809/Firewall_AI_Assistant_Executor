@@ -1,18 +1,18 @@
 /* frontend/src/components/SettingsPanel.css */
 
-/* Kế thừa biến từ App.css nếu cần, nhưng các biến chính đã có ở App.css */
+/* Ke thua bien tu App.css neu can, nhung cac bien chinh da co o App.css */
 
 /* --- Panel Layout --- */
 .settings-panel {
   padding: calc(var(--spacing-unit) * 2);
-  overflow-y: auto; /* Cho phép cuộn nếu cần */
-  height: 100%; /* Đảm bảo chiếm hết chiều cao vùng content sidebar */
+  overflow-y: auto; /* Cho phep cuon neu can */
+  height: 100%; /* Dam bao chiem het chieu cao vung content sidebar */
 }
 
 .settings-content {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--spacing-unit) * 1.75); /* Gap giữa các section */
+  gap: calc(var(--spacing-unit) * 1.75); /* Gap giua cac section */
   max-width: 100%;
   margin: 0;
 }
@@ -21,24 +21,24 @@
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--spacing-unit) * 0.75); /* Gap giữa label và control */
+  gap: calc(var(--spacing-unit) * 0.75); /* Gap giua label va control */
 
-  /* ---- ANIMATION CHO CÁC SECTION KHI SIDEBAR MỞ ---- */
-  opacity: 0; /* Trạng thái ban đầu: ẩn */
-  transform: translateY(8px); /* Trạng thái ban đầu: hơi dịch xuống */
-  /* Áp dụng transition cho opacity và transform */
+  /* ---- ANIMATION CHO CAC SECTION KHI SIDEBAR MO ---- */
+  opacity: 0; /* Trang thai ban dau: an */
+  transform: translateY(8px); /* Trang thai ban dau: hoi dich xuong */
+  /* Ap dung transition cho opacity va transform */
   transition: opacity 0.3s ease-out, transform 0.3s ease-out;
-  /* Thêm delay dựa trên biến --section-index (sẽ đặt trong JSX) */
+  /* Them delay dua tren bien --section-index (se dat trong JSX) */
   transition-delay: calc(var(--section-index, 0) * 0.06s);
 }
 
-/* Khi sidebar có class 'open', các section bên trong sẽ hiện ra */
+/* Khi sidebar co class 'open', cac section ben trong se hien ra */
 .sidebar-container.open .settings-section {
-  opacity: 1; /* Hiện rõ */
-  transform: translateY(0); /* Về vị trí gốc */
+  opacity: 1; /* Hien ro */
+  transform: translateY(0); /* Ve vi tri goc */
 }
 
-.settings-section > label { /* Label chính của section */
+.settings-section > label { /* Label chinh cua section */
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -54,34 +54,36 @@
    flex-shrink: 0;
 }
 
-/* --- ANIMATION CHO CÁC CONTROLS (select, input, slider...) BÊN TRONG SECTION --- */
+/* --- ANIMATION CHO CAC CONTROLS (select, input, slider...) BEN TRONG SECTION --- */
 .settings-section select,
 .settings-section input[type="text"],
 .settings-section input[type="number"],
 .settings-section input[type="password"],
 .settings-section .slider-container,
 .settings-section .api-key-actions,
-.settings-section .admin-checkbox-container
+.settings-section .admin-checkbox-container,
+.settings-section.fortigate-context-commands-section .command-checkbox-list /* Them selector moi */
 {
-  opacity: 0; /* Trạng thái ban đầu: ẩn */
-  transform: translateY(5px); /* Trạng thái ban đầu: hơi dịch xuống nhẹ */
-  /* Áp dụng transition - duration ngắn hơn section cha một chút */
+  opacity: 0; /* Trang thai ban dau: an */
+  transform: translateY(5px); /* Trang thai ban dau: hoi dich xuong nhe */
+  /* Ap dung transition - duration ngan hon section cha mot chut */
   transition: opacity 0.25s ease-out, transform 0.25s ease-out;
-  /* Thêm delay nhỏ *SAU* delay của section cha */
-  transition-delay: calc(var(--section-index, 0) * 0.1s + 0.12s); /* Delay = delay cha + 80ms */
+  /* Them delay nho *SAU* delay cua section cha */
+  transition-delay: calc(var(--section-index, 0) * 0.06s + 0.12s); /* Delay = delay cha + 120ms */
 }
 
-/* Khi sidebar mở, các control bên trong section sẽ hiện ra */
+/* Khi sidebar mo, cac control ben trong section se hien ra */
 .sidebar-container.open .settings-section select,
 .sidebar-container.open .settings-section input[type="text"],
 .sidebar-container.open .settings-section input[type="number"],
 .sidebar-container.open .settings-section input[type="password"],
 .sidebar-container.open .settings-section .slider-container,
 .sidebar-container.open .settings-section .api-key-actions,
-.sidebar-container.open .settings-section .admin-checkbox-container
+.sidebar-container.open .settings-section .admin-checkbox-container,
+.sidebar-container.open .settings-section.fortigate-context-commands-section .command-checkbox-list /* Them selector moi */
 {
-  opacity: 1; /* Hiện rõ */
-  transform: translateY(0); /* Về vị trí gốc */
+  opacity: 1; /* Hien ro */
+  transform: translateY(0); /* Ve vi tri goc */
 }
 
 /* --- Input/Select Styles trong Settings --- */
@@ -129,16 +131,16 @@
 }
 
 /* --- Parameter Sliders --- */
-.settings-subsection { /* Wrapper cho mỗi slider/input trong Parameter section */
+.settings-subsection { /* Wrapper cho moi slider/input trong Parameter section */
     display: flex;
     flex-direction: column;
-    gap: calc(var(--spacing-unit) * 0.25); /* Khoảng cách nhỏ giữa label và control */
+    gap: calc(var(--spacing-unit) * 0.25); /* Khoang cach nho giua label va control */
 }
-/* Label chung cho cả khu Parameter Section */
+/* Label chung cho ca khu Parameter Section */
 .parameter-section > label:first-of-type {
-    margin-bottom: calc(var(--spacing-unit) * 0.5); /* Thêm khoảng cách dưới label chính */
+    margin-bottom: calc(var(--spacing-unit) * 0.5); /* Them khoang cach duoi label chinh */
 }
-/* Label riêng cho từng slider/input (Temp, TopP, TopK) */
+/* Label rieng cho tung slider/input (Temp, TopP, TopK) */
 .settings-subsection label {
   text-transform: none;
   font-weight: 500;
@@ -202,12 +204,10 @@
   text-align: right;
   padding-right: var(--spacing-unit);
   max-width: 80px;
-  /* margin-left: auto;  */ /* Không cần nếu dùng subsection */
 }
 
 /* --- API Key Section --- */
 .api-key-section {
-  /* margin-top: var(--spacing-unit); */ /* Bỏ nếu dùng gap của settings-content */
   padding-top: calc(var(--spacing-unit) * 1.5);
   border-top: 1px solid var(--border-color);
 }
@@ -276,7 +276,6 @@
 
 /* --- Target Environment Section --- */
 .target-environment-section {
-  /* margin-top: var(--spacing-unit); */
   padding-top: calc(var(--spacing-unit) * 1.5);
   border-top: 1px solid var(--border-color);
 }
@@ -293,27 +292,21 @@
 }
  .target-environment-section h4 svg { font-size: 0.9rem; }
 
-/* Giảm khoảng cách dưới của các select trong section này */
 .target-environment-section select {
-   margin-bottom: calc(var(--spacing-unit) * 1.25); /* Giảm nhẹ */
+   margin-bottom: calc(var(--spacing-unit) * 1.25);
 }
 
-/* --- Custom File Input Container Animation (KHÔNG thay đổi logic animation) --- */
 .custom-file-input-container {
-    /* Style cơ bản */
     display: flex;
     flex-direction: column;
     gap: calc(var(--spacing-unit) * 0.5);
     overflow: hidden;
-
-    /* Style cho trạng thái ẩn (mặc định) */
     max-height: 0;
     opacity: 0;
     margin-top: 0;
     margin-bottom: 0;
     padding-top: 0;
     padding-bottom: 0;
-    /* Transition */
     transition:
         max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
         opacity 0.3s ease-in-out 0.05s,
@@ -323,7 +316,6 @@
         padding-bottom 0.35s cubic-bezier(0.4, 0, 0.2, 1);
  }
  .custom-file-input-container.expanded {
-    /* Style cho trạng thái hiện */
     max-height: 200px;
     opacity: 1;
     margin-top: calc(var(--spacing-unit) * -0.5);
@@ -341,7 +333,7 @@
     display: block;
  }
 .custom-file-input {
-    margin-bottom: 0; /* Bỏ margin-bottom ở input */
+    margin-bottom: 0;
  }
 .custom-file-note,
 .target-env-note {
@@ -354,9 +346,73 @@
      margin-top: 0;
  }
 
+/* --- FortiGate Connection & Context Commands Section (khi targetOs la 'fortios') --- */
+.fortigate-connection-section,
+.fortigate-context-commands-section {
+  padding-top: calc(var(--spacing-unit) * 1.5);
+  border-top: 1px solid var(--border-color);
+}
+
+.fortigate-context-commands-section > label { /* Label chinh cua section */
+  margin-bottom: calc(var(--spacing-unit) * 1);
+}
+
+.select-all-fgt-ctx {
+    margin-bottom: calc(var(--spacing-unit) * 1);
+    padding-bottom: calc(var(--spacing-unit) * 0.75);
+    border-bottom: 1px solid var(--border-color-secondary);
+}
+.select-all-fgt-ctx .admin-checkbox-label svg {
+    font-size: 1.1rem; /* Icon select all to hon chut */
+}
+
+.command-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--spacing-unit) * 0.5); /* Khoang cach giua cac item checkbox cmd */
+  max-height: 250px; /* Gioi han chieu cao va cho phep cuon */
+  overflow-y: auto;
+  padding-right: calc(var(--spacing-unit) * 0.5); /* Khoang trong cho scrollbar */
+  background-color: #1a1b1c; /* Nen hoi khac cho ds */
+  padding: var(--spacing-unit);
+  border-radius: var(--border-radius-small);
+  border: 1px solid var(--border-color);
+}
+
+.command-checkbox-item {
+  margin-top: 0; /* Ghi de margin-top mac dinh tu .admin-checkbox-container */
+  padding: calc(var(--spacing-unit) * 0.35) calc(var(--spacing-unit) * 0.5);
+  border-radius: var(--border-radius-small);
+  transition: background-color 0.1s ease-out;
+}
+.command-checkbox-item:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.command-checkbox-item .admin-checkbox-label {
+    font-size: 0.8rem; /* Font nho hon cho text cmd */
+    font-weight: 400;
+    align-items: center; /* Can giua icon va text theo chieu doc */
+}
+.command-checkbox-item .admin-checkbox-label code {
+  font-family: var(--code-font-family);
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.95em;
+  color: var(--text-secondary);
+  word-break: break-all; /* Dam bao cmd dai se wrap */
+}
+.command-checkbox-item .admin-checkbox-label svg {
+   margin-top: -1px; /* Tinh chinh vi tri icon */
+   flex-shrink: 0;
+}
+.command-checkbox-item .admin-checkbox:checked + .admin-checkbox-label code {
+    color: var(--text-accent);
+}
+
+
 /* --- Advanced Settings Section --- */
 .advanced-settings-section {
-  /* margin-top: var(--spacing-unit); */
   padding-top: calc(var(--spacing-unit) * 1.5);
   border-top: 1px solid var(--border-color);
 }
@@ -373,7 +429,6 @@
 }
 .advanced-settings-section h4 svg { font-size: 0.9rem; }
 
-/* Label for Safety Setting */
 .advanced-settings-section > label {
     margin-bottom: calc(var(--spacing-unit) * 0.5);
 }
@@ -403,7 +458,7 @@
     background-color: var(--warning-color);
     border-color: var(--warning-color);
 }
-/* Dấu check */
+/* Dau check */
 .admin-checkbox:checked::after {
     content: '';
     display: block;

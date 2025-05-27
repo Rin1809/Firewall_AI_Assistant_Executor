@@ -15,8 +15,8 @@ from .prompt_utils import (
 from .gemini_utils import generate_response_from_gemini
 from .execution_utils import (
     extract_code_block, execute_fortigate_commands,
-    execute_local_script, fetch_and_save_fortigate_context,
-    DEFAULT_FORTIGATE_CONTEXT_COMMANDS
+    execute_local_script, fetch_and_save_fortigate_context
+    # DEFAULT_FORTIGATE_CONTEXT_COMMANDS # Ko can import truc tiep o day nua
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
@@ -30,6 +30,8 @@ def handle_generate():
     target_os_input = data.get('target_os', 'auto')
     file_type_input = data.get('file_type', 'py')
     fortigate_config_from_request = data.get('fortigate_config')
+    # Nhan ds lenh ctx FGT da chon tu request
+    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
 
     if not user_input:
@@ -63,10 +65,9 @@ def handle_generate():
         else:
             try:
                 logger.info("Generate FGT: Dang lay thong tin ngu canh...")
-                # Cho generate, co the dung default commands hoac sau nay tuy chinh
                 fortigate_context_str = fetch_and_save_fortigate_context(
                     fortigate_config_from_request,
-                    commands_to_fetch=DEFAULT_FORTIGATE_CONTEXT_COMMANDS # Hoac 1 set khac
+                    commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
                 )
                 logger.info("Generate FGT: Da lay xong thong tin ngu canh FortiGate.")
             except Exception as e:
@@ -144,7 +145,7 @@ def handle_execute():
     code_to_execute = data.get('code')
     run_as_admin = data.get('run_as_admin', False)
     file_type_requested = data.get('file_type', 'py')
-    fortigate_config = data.get('fortigate_config') # Nhan tu sendApiRequest
+    fortigate_config = data.get('fortigate_config')
 
     if not code_to_execute:
         return jsonify({"error": "Không có mã nào để thực thi."}), 400
@@ -155,7 +156,7 @@ def handle_execute():
 
     if file_extension == 'fortios':
         logger.info(f"Nhan lenh FortiOS CLI (.{file_extension}). Chuan bi thuc thi.")
-        if not fortigate_config: # Check lai lan nua
+        if not fortigate_config:
             logger.error("Thieu fortigate_config cho lenh FortiOS.")
             return jsonify({
                 "message": "Lỗi: Thiếu thông tin cấu hình FortiGate.",
@@ -196,7 +197,9 @@ def handle_debug():
     stderr = data.get('stderr', '')
     model_config = data.get('model_config', {})
     file_type = data.get('file_type', 'py')
-    fortigate_config_for_context = data.get('fortigate_config_for_context')
+    fortigate_config_for_context = data.get('fortigate_config_for_context') # Day la chi tiet knoi FGT
+    # Nhan ds lenh ctx FGT da chon tu request
+    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
 
     if not failed_code:
@@ -222,7 +225,7 @@ def handle_debug():
                 logger.info("Debug FGT: Dang lay thong tin ngu canh...")
                 fortigate_context_str_debug = fetch_and_save_fortigate_context(
                     fortigate_config_for_context,
-                    commands_to_fetch=DEFAULT_FORTIGATE_CONTEXT_COMMANDS # Hoac 1 set khac
+                    commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
                 )
                 logger.info("Debug FGT: Da lay xong thong tin ngu canh FortiGate cho debug.")
             except Exception as e:
@@ -355,7 +358,7 @@ def handle_explain():
     content_to_explain = data.get('content')
     context = data.get('context', 'unknown')
     model_config = data.get('model_config', {})
-    file_type = data.get('file_type') # Nhan tu frontend
+    file_type = data.get('file_type')
 
     if not content_to_explain:
         return jsonify({"error": "Không có nội dung để giải thích."}), 400
@@ -367,7 +370,7 @@ def handle_explain():
         content_to_explain = str(content_to_explain)
 
     explain_context = 'code' if context == 'python_code' else context
-    language_for_prompt = file_type if explain_context == 'code' else None # Su dung file_type tu request
+    language_for_prompt = file_type if explain_context == 'code' else None
 
     full_prompt = create_explain_prompt(content_to_explain, explain_context, language=language_for_prompt)
     explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
@@ -387,9 +390,11 @@ def handle_fortigate_chat():
     logger = current_app.logger
     data = request.get_json()
     user_prompt = data.get('prompt')
-    fortigate_config_from_request = data.get('fortigate_config') # Da co tu sendApiRequest
+    fortigate_config_from_request = data.get('fortigate_config')
     model_config_params = data.get('model_config', {})
     conversation_history_context_str = data.get('conversation_history_for_chat_context', "(Không có lịch sử FortiOS)")
+    # Nhan ds lenh ctx FGT da chon tu request
+    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
     if not user_prompt:
         return jsonify({"error": "Vui lòng nhập yêu cầu."}), 400
@@ -399,10 +404,10 @@ def handle_fortigate_chat():
         fortigate_config_from_request.get('ipHost') and \
         fortigate_config_from_request.get('username'):
         try:
-            logger.info("FGT Chat: Lay ctx (default cmds)...")
+            logger.info("FGT Chat: Lay ctx...")
             fortigate_context_str = fetch_and_save_fortigate_context(
                 fortigate_config_from_request,
-                commands_to_fetch=DEFAULT_FORTIGATE_CONTEXT_COMMANDS
+                commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
             )
             logger.info("FGT Chat: Da lay xong ctx.")
         except Exception as e:
@@ -411,14 +416,13 @@ def handle_fortigate_chat():
     else:
         logger.warning("FGT Chat: Thieu info ket noi (IP/Host, User) de lay ctx.")
 
-    # gioi han do dai, tranh prompt qua lon
     HISTORY_LIMIT = 10000
-    FGT_CTX_LIMIT = 8000
+    FGT_CTX_LIMIT = 8000 # Gioi han do dai cua ctx FGT
 
     chat_prompt_for_gemini = f"""Bạn là một trợ lý AI chuyên gia về FortiGate.
 Người dùng hiện tại đang hỏi: "{user_prompt}"
 
-Dưới đây là một số thông tin ngữ cảnh từ thiết bị FortiGate của họ (được lấy bằng các lệnh mặc định):
+Dưới đây là một số thông tin ngữ cảnh từ thiết bị FortiGate của họ (được lấy bằng các lệnh {"đã chọn" if fortigate_selected_commands else "mặc định"}):
 <fortigate_config_context_start>
 {fortigate_context_str[:FGT_CTX_LIMIT]}
 </fortigate_config_context_start>
@@ -435,8 +439,6 @@ Nếu người dùng chỉ hỏi thông tin về mã đã có hoặc lỗi đã 
 Sử dụng Markdown cho câu trả lời của bạn.
 Bắt đầu trực tiếp bằng câu trả lời, không thêm lời dẫn.
 """
-    # logger.debug(f"FGT Chat Prompt (with history):\n{chat_prompt_for_gemini}")
-
     raw_response = generate_response_from_gemini(chat_prompt_for_gemini, model_config_params, is_for_review_or_debug=True)
 
     if raw_response and not raw_response.startswith("Lỗi"):

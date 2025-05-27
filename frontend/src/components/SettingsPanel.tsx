@@ -1,7 +1,7 @@
 // frontend/src/components/SettingsPanel.tsx
 import React, { ChangeEvent, CSSProperties } from 'react';
-import { FiSave, FiSettings, FiKey, FiAlertTriangle, FiGlobe, FiFileText, FiSliders, FiShield, FiLink } from 'react-icons/fi'; 
-import { TargetOS, ModelConfig, FortiGateConfig } from '../App'; 
+import { FiSave, FiSettings, FiKey, FiAlertTriangle, FiGlobe, FiFileText, FiSliders, FiShield, FiLink, FiList, FiCheckSquare, FiSquare } from 'react-icons/fi';
+import { TargetOS, ModelConfig, FortiGateConfig } from '../App';
 import './SettingsPanel.css';
 
 interface SettingsPanelProps {
@@ -17,14 +17,20 @@ interface SettingsPanelProps {
   targetOs: TargetOS;
   fileType: string;
   customFileName: string;
-  fortiGateConfig: FortiGateConfig; 
+  fortiGateConfig: FortiGateConfig;
+  // Prop moi cho cmd FGT context
+  fortiGateContextCommandsConfig: {
+    list: string[]; // DS tat ca cmd co the chon
+    selected: Record<string, boolean>; // Map cmd -> daChon
+  };
 }
 
 const SettingsPanel: React.FC<SettingsPanelProps> = ({
   modelConfig, onConfigChange, onSaveSettings, isDisabled,
   runAsAdmin, uiApiKey, useUiApiKey, onApplyUiApiKey, onUseEnvKey,
   targetOs, fileType, customFileName,
-  fortiGateConfig, 
+  fortiGateConfig,
+  fortiGateContextCommandsConfig, // Nhan prop moi
 }) => {
 
   const getSuggestedFileTypes = (os: TargetOS): { value: string; label: string }[] => {
@@ -42,10 +48,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const isCustomFile = fileType === 'other';
   const getSectionStyle = (index: number): CSSProperties => ({ '--section-index': index } as CSSProperties);
 
+  // Ktra trang thai cua nut "Select All"
+  const allContextCommandsSelected = fortiGateContextCommandsConfig.list.every(cmd => fortiGateContextCommandsConfig.selected[cmd]);
+  const someContextCommandsSelected = fortiGateContextCommandsConfig.list.some(cmd => fortiGateContextCommandsConfig.selected[cmd]);
+
+
   return (
     <div className="settings-panel">
       <div className="settings-content">
-        {/* Cấu hình Model (Index 0) */}
+        {/* Cau hinh Model (Index 0) */}
         <div className="settings-section" style={getSectionStyle(0)}>
           <label htmlFor="modelName">Model</label>
           <div className="model-select-group">
@@ -66,7 +77,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <p className="api-key-note">Key chỉ gửi tới backend cục bộ. Không lưu trữ.</p>
         </div>
 
-        {/* Tham số Sinh mã (Index 2) */}
+        {/* Tham so Sinh ma (Index 2) */}
         <div className="settings-section parameter-section" style={getSectionStyle(2)}>
           <label><FiSliders /> Tham số Sinh mã</label>
           <div className="settings-subsection">
@@ -89,14 +100,14 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-         {/* Môi trường Mục tiêu (Index 3) */}
+         {/* Moi truong Muc tieu (Index 3) */}
          <div className="settings-section target-environment-section" style={getSectionStyle(3)}>
            <h4><FiGlobe /> Môi trường Mục tiêu (Script/Lệnh)</h4>
            <label htmlFor="targetOs">Hệ điều hành / Thiết bị</label>
            <select id="targetOs" name="targetOs" value={targetOs} onChange={onConfigChange} disabled={isDisabled}>
-              <option value="auto">Tự động (Script)</option> 
-              <option value="windows">Windows (Script)</option> 
-              <option value="linux">Linux (Script)</option> 
+              <option value="auto">Tự động (Script)</option>
+              <option value="windows">Windows (Script)</option>
+              <option value="linux">Linux (Script)</option>
               <option value="macos">macOS (Script)</option>
               <option value="fortios">FortiGate/FortiOS (CLI)</option>
            </select>
@@ -112,31 +123,79 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <p className="target-env-note">Áp dụng cho việc tạo và thực thi file script / lệnh CLI.</p>
          </div>
 
-        {/* Kết nối FortiGate (Index 4) */}
-        <div className="settings-section" style={getSectionStyle(4)}>
-          <label><FiLink /> Kết nối FortiGate (Nếu mục tiêu là FortiOS)</label>
-          <div className="settings-subsection">
-            <label htmlFor="fortiGateIpHost">IP/Hostname</label>
-            <input type="text" id="fortiGateIpHost" name="ipHost" value={fortiGateConfig.ipHost} onChange={onConfigChange} placeholder="VD: 192.168.1.99" disabled={isDisabled || targetOs !== 'fortios'} />
-          </div>
-          <div className="settings-subsection">
-            <label htmlFor="fortiGatePortSsh">Port SSH</label>
-            <input type="text" id="fortiGatePortSsh" name="portSsh" value={fortiGateConfig.portSsh} onChange={onConfigChange} placeholder="22" disabled={isDisabled || targetOs !== 'fortios'} />
-          </div>
-          <div className="settings-subsection">
-            <label htmlFor="fortiGateUsername">Username</label>
-            <input type="text" id="fortiGateUsername" name="username" value={fortiGateConfig.username} onChange={onConfigChange} placeholder="admin" disabled={isDisabled || targetOs !== 'fortios'} />
-          </div>
-          <div className="settings-subsection">
-            <label htmlFor="fortiGatePassword">Password</label>
-            <input type="password" id="fortiGatePassword" name="password" value={fortiGateConfig.password || ''} onChange={onConfigChange} placeholder="Nhập mật khẩu" disabled={isDisabled || targetOs !== 'fortios'} autoComplete="new-password" />
-          </div>
-          <p className="target-env-note">Dùng để thực thi lệnh CLI trên FortiGate.</p>
-        </div>
+        {/* Cai dat dac thu cho FortiGate - Hien thi co dieu kien (Index 4) */}
+        {targetOs === 'fortios' && (
+            <>
+                {/* Ket noi FortiGate */}
+                <div className="settings-section fortigate-connection-section" style={getSectionStyle(4)}>
+                    <label><FiLink /> Kết nối FortiGate</label>
+                    <div className="settings-subsection">
+                        <label htmlFor="fortiGateIpHost">IP/Hostname</label>
+                        <input type="text" id="fortiGateIpHost" name="ipHost" value={fortiGateConfig.ipHost} onChange={onConfigChange} placeholder="VD: 192.168.1.99" disabled={isDisabled} />
+                    </div>
+                    <div className="settings-subsection">
+                        <label htmlFor="fortiGatePortSsh">Port SSH</label>
+                        <input type="text" id="fortiGatePortSsh" name="portSsh" value={fortiGateConfig.portSsh} onChange={onConfigChange} placeholder="22" disabled={isDisabled} />
+                    </div>
+                    <div className="settings-subsection">
+                        <label htmlFor="fortiGateUsername">Username</label>
+                        <input type="text" id="fortiGateUsername" name="username" value={fortiGateConfig.username} onChange={onConfigChange} placeholder="admin" disabled={isDisabled} />
+                    </div>
+                    <div className="settings-subsection">
+                        <label htmlFor="fortiGatePassword">Password</label>
+                        <input type="password" id="fortiGatePassword" name="password" value={fortiGateConfig.password || ''} onChange={onConfigChange} placeholder="Nhập mật khẩu" disabled={isDisabled} autoComplete="new-password" />
+                    </div>
+                    <p className="target-env-note">Dùng để thực thi lệnh CLI và lấy ngữ cảnh.</p>
+                </div>
+
+                {/* Lenh lay Ngu canh FortiGate (Index 5 - neu FortiOS duoc chon) */}
+                <div className="settings-section fortigate-context-commands-section" style={getSectionStyle(targetOs === 'fortios' ? 5 : 4)}>
+                    <label><FiList /> Lệnh lấy Ngữ cảnh FortiGate</label>
+                    <div className="admin-checkbox-container select-all-fgt-ctx">
+                         <input
+                            type="checkbox"
+                            id="fgtCtxCmd_selectAll_id" // Them id de label for hoat dong
+                            name="fgtCtxCmd_selectAll" // Ten de App.tsx xu ly
+                            checked={allContextCommandsSelected}
+                            ref={input => { // Cho trang thai indeterminate
+                                if (input) input.indeterminate = someContextCommandsSelected && !allContextCommandsSelected;
+                            }}
+                            onChange={onConfigChange}
+                            disabled={isDisabled}
+                            className="admin-checkbox"
+                        />
+                        <label htmlFor="fgtCtxCmd_selectAll_id" className="admin-checkbox-label" style={{ fontWeight: 600 }}>
+                            {allContextCommandsSelected ? <FiCheckSquare style={{color: 'var(--accent-primary)'}}/> : <FiSquare />}
+                            Chọn Tất cả / Bỏ chọn Tất cả
+                        </label>
+                    </div>
+                    <div className="command-checkbox-list">
+                        {fortiGateContextCommandsConfig.list.map((cmd, index) => (
+                            <div key={cmd + index} className="command-checkbox-item admin-checkbox-container">
+                                <input
+                                    type="checkbox"
+                                    id={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} // Them id
+                                    name={`fgtCtxCmd_${cmd}`} // Ten de App.tsx xu ly
+                                    checked={!!fortiGateContextCommandsConfig.selected[cmd]}
+                                    onChange={onConfigChange}
+                                    disabled={isDisabled}
+                                    className="admin-checkbox"
+                                />
+                                <label htmlFor={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} className="admin-checkbox-label command-label">
+                                    {fortiGateContextCommandsConfig.selected[cmd] ? <FiCheckSquare style={{color: 'var(--accent-primary)', fontSize: '0.9em'}}/> : <FiSquare style={{fontSize: '0.9em'}} />}
+                                    <code>{cmd}</code>
+                                </label>
+                            </div>
+                        ))}
+                    </div>
+                     <p className="target-env-note">Các lệnh này sẽ được chạy để lấy thông tin ngữ cảnh khi bạn tương tác với AI về FortiGate.</p>
+                </div>
+            </>
+        )}
 
 
-        {/* Cài đặt Khác (Index 5) */}
-        <div className="settings-section advanced-settings-section" style={getSectionStyle(5)}>
+        {/* Cai dat Khac (Index phu thuoc vao lua chon FortiOS) */}
+        <div className="settings-section advanced-settings-section" style={getSectionStyle(targetOs === 'fortios' ? 6 : 4)}>
            <h4><FiSettings/> Cài đặt Khác</h4>
            <label htmlFor="safetySetting"><FiShield /> Lọc Nội dung An toàn</label>
            <select id="safetySetting" name="safetySetting" value={modelConfig.safetySetting} onChange={onConfigChange} disabled={isDisabled} >
