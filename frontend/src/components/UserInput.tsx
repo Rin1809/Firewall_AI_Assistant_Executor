@@ -63,7 +63,7 @@ const UserInput: React.FC<UserInputProps> = ({
               title={isFortiGateInteractiveMode ? "Tắt chế độ tạo lệnh FortiGate (Chuyển sang Chat)" : "Bật chế độ tạo lệnh FortiGate"}
             >
               <FiTool size="0.9em" style={{ marginRight: '6px' }} />
-              Tương tác FortiGate {isFortiGateInteractiveMode ? '(Đang Bật)' : '(Đang Tắt)'}
+              Tương tác {isFortiGateInteractiveMode ? '(ON)' : '(OFF)'}
             </button>
           </div>
         )}

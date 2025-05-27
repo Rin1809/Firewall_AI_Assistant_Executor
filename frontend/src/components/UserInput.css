@@ -64,26 +64,23 @@
 }
 
 .suggestion-chip.interactive-fgt-chip {
-    color: var(--text-accent);
-    border-color: rgba(var(--text-accent-rgb, 138, 180, 248), 0.4);
-    background-color: var(--bg-tertiary); /* Mau nen mac dinh */
+    color: #686868;
+    border-color: #2d2d2d;
+    background-color: var(--bg-tertiary); 
 }
 .suggestion-chip.interactive-fgt-chip:hover:not(:disabled) {
-    background-color: var(--bg-accent-hover); /* Mau nen khi hover */
-    border-color: var(--text-accent);
-    color: var(--text-accent);
+    background-color: #474747c0; /* Mau nen khi hover */
+    color: #ffffff;
 }
 
 /* Trang thai active cho nut Tuong tac FGT */
 .suggestion-chip.interactive-fgt-chip.active {
-    background-color: var(--text-accent); /* Mau nen khi active */
-    color: var(--bg-primary); /* Mau chu khi active */
-    border-color: var(--text-accent);
+    background-color: #7779ff49; /* Mau nen khi active */
+    color: #ffffff; /* Mau chu khi active */
     font-weight: 600; /* Dam hon chut khi active */
 }
 .suggestion-chip.interactive-fgt-chip.active:hover:not(:disabled) {
-    background-color: #a6c9ff; /* Mau nen sang hon khi active va hover */
-    border-color: #a6c9ff;
+    background-color: #7779ff63; /* Mau nen sang hon khi active va hover */
     color: var(--bg-primary);
 }
 

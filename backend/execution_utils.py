@@ -28,7 +28,7 @@ DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
     "execute log display event 20", # Lay 20 log event
     "get system dns",
     "get system dhcp server"
-    "diagnose debug report", # Lenh nay rat dai, can nhac
+    #"diagnose debug report", # Lenh nay rat dai, can nhac
     "diagnose sys session list" # Lenh nay cung rat dai
 ]
 

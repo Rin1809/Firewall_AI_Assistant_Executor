@@ -131,11 +131,6 @@ function App() {
         setIsFortiGateInteractiveMode(prevMode => {
             const newMode = !prevMode;
             localStorage.setItem(FGT_INTERACTIVE_MODE_STORAGE_KEY, String(newMode));
-            if (newMode) {
-                toast.info("Chế độ Tương tác FortiGate: Đã BẬT. Gửi prompt sẽ tạo lệnh/cấu hình.", { autoClose: 3500 });
-            } else {
-                toast.info("Chế độ Tương tác FortiGate: Đã TẮT. Gửi prompt sẽ chat với FortiAI.", { autoClose: 3500 });
-            }
             return newMode;
         });
     }, []);
