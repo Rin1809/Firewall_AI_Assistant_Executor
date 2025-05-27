@@ -4,7 +4,7 @@ import { FiSettings, FiChevronUp } from 'react-icons/fi';
 import UserInput from './UserInput';
 import InteractionBlock from './InteractionBlock';
 import CollapsedInteractionBlock from './CollapsedInteractionBlock';
-import { ConversationBlock, ExecutionResult } from '../App';
+import { ConversationBlock, ExecutionResult, TargetOS } from '../App';
 import './CenterArea.css';
 
 interface CenterAreaProps {
@@ -13,7 +13,7 @@ interface CenterAreaProps {
   isBusy: boolean;
   prompt: string;
   setPrompt: (value: string) => void;
-  onGenerate: (prompt: string) => void;
+  onPrimarySubmit: (prompt: string) => void; // Cap nhat ten prop
   onReview: (codeToReview: string, blockId: string) => void;
   onExecute: (codeToExecute: string, blockId: string) => void;
   onDebug: (codeToDebug: string, executionResult: ExecutionResult, blockId: string) => void;
@@ -25,35 +25,38 @@ interface CenterAreaProps {
   expandedOutputs: Record<string, { stdout: boolean; stderr: boolean }>;
   onToggleOutputExpand: (blockId: string, type: 'stdout' | 'stderr') => void;
   onToggleSidebar: () => void;
+  targetOs: TargetOS;
+  isFortiGateInteractiveMode: boolean; // Nhan state moi
+  onToggleFortiGateInteractiveMode: () => void; // Nhan ham moi
 }
 
 const CenterArea: React.FC<CenterAreaProps> = (props) => {
   const {
     conversation, isLoading, isBusy, prompt, setPrompt,
-    onGenerate, onReview, onExecute, onDebug, onApplyCorrectedCode,
+    onPrimarySubmit, // Su dung prop moi
+    onReview, onExecute, onDebug, onApplyCorrectedCode,
     onInstallPackage, onExplain,
     collapsedStates, onToggleCollapse, expandedOutputs, onToggleOutputExpand,
-    onToggleSidebar
+    onToggleSidebar,
+    targetOs,
+    isFortiGateInteractiveMode, // Nhan prop
+    onToggleFortiGateInteractiveMode // Nhan prop
   } = props;
 
-  const scrollRef = useRef<HTMLDivElement>(null); // Ref for the main interaction container
-  const endOfMessagesRef = useRef<HTMLDivElement>(null); // Ref for the marker at the end
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Auto scroll to the bottom when new messages are added
     if (endOfMessagesRef.current) {
       const lastBlock = conversation.length > 0 ? conversation[conversation.length - 1] : null;
-
       if (lastBlock && lastBlock.isNew) {
-        // Using a timeout to allow the DOM to update and animations to progress
-        // before attempting to scroll. 250ms might be a safer value.
         const timer = setTimeout(() => {
           endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 250); // Increased timeout for potentially complex rendering
+        }, 250);
         return () => clearTimeout(timer);
       }
     }
-  }, [conversation]); // Re-run when the conversation array changes
+  }, [conversation]);
 
   const renderConversation = () => {
     const rounds: { userBlock: ConversationBlock; childrenBlocks: ConversationBlock[] }[] = [];
@@ -118,9 +121,17 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
       </div>
       <div className="interaction-container" ref={scrollRef}>
         {renderConversation()}
-        <div ref={endOfMessagesRef} style={{ height: '1px' }} /> {/* Empty marker div at the end */}
+        <div ref={endOfMessagesRef} style={{ height: '1px' }} />
       </div>
-      <UserInput prompt={prompt} setPrompt={setPrompt} onSend={() => onGenerate(prompt)} isLoading={isLoading} />
+      <UserInput
+        prompt={prompt}
+        setPrompt={setPrompt}
+        onPrimarySubmit={() => onPrimarySubmit(prompt)} // Su dung prop moi
+        isLoading={isLoading}
+        targetOs={targetOs}
+        isFortiGateInteractiveMode={isFortiGateInteractiveMode} // Truyen prop
+        onToggleFortiGateInteractiveMode={onToggleFortiGateInteractiveMode} // Truyen prop
+      />
     </main>
   );
 };

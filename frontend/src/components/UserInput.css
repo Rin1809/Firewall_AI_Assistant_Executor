@@ -6,46 +6,108 @@
     border-top: 1px solid #131314;
     margin-top: auto;
     width: 100%;
-    flex-shrink: 0;
+    flex-shrink: 0; /* Khong co lai */
 }
 
 .user-input-area {
     display: flex;
-    align-items: flex-end; /* Giữ căn chỉnh dưới cùng */
+    flex-direction: column; /* De chip o tren input chinh */
     background-color: var(--bg-secondary);
     border: 1px solid #1e1f20;
-    border-radius: 24px; /* độ bo tròn đáng kể */
-    padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit) calc(var(--spacing-unit) * 0.75) calc(var(--spacing-unit) * 1.5); /*padding */
+    border-radius: 24px;
+    padding: calc(var(--spacing-unit) * 1) var(--spacing-unit) calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
     width: 100%;
-    max-width: 650px; /* Giới hạn chiều rộng */
-    margin-left: auto;  
-    margin-right: auto; 
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3); /* shadow nhẹ */
+    max-width: 700px; /* Tang chieu rong len chut */
+    margin-left: auto;
+    margin-right: auto;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
     position: relative;
-    transition: border-color 0.2s, box-shadow 0.2s; /* transition */
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-/* hiệu ứng focus cho cả khu vực */
+/* Hieu ung focus cho ca khu vuc */
 .user-input-area:focus-within {
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 1px var(--accent-primary), 0 2px 10px rgba(0,0,0,0.3);
 }
 
+.input-suggestion-chips {
+    display: flex;
+    gap: var(--spacing-unit);
+    margin-bottom: calc(var(--spacing-unit) * 1);
+    padding-left: calc(var(--spacing-unit) * 0.5);
+    padding-top: calc(var(--spacing-unit) * 0.25); /* Them chut padding top */
+    flex-wrap: wrap;
+    align-self: flex-start; /* Can trai chip */
+}
+
+.suggestion-chip {
+    background-color: var(--bg-tertiary);
+    color: var(--text-secondary);
+    padding: calc(var(--spacing-unit)*0.6) calc(var(--spacing-unit)*1.25);
+    border-radius: 16px;
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    transition: background-color 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out;
+}
+.suggestion-chip:hover:not(:disabled) {
+    background-color: #3a3f42;
+    color: var(--text-primary);
+}
+.suggestion-chip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.suggestion-chip.interactive-fgt-chip {
+    color: var(--text-accent);
+    border-color: rgba(var(--text-accent-rgb, 138, 180, 248), 0.4);
+    background-color: var(--bg-tertiary); /* Mau nen mac dinh */
+}
+.suggestion-chip.interactive-fgt-chip:hover:not(:disabled) {
+    background-color: var(--bg-accent-hover); /* Mau nen khi hover */
+    border-color: var(--text-accent);
+    color: var(--text-accent);
+}
+
+/* Trang thai active cho nut Tuong tac FGT */
+.suggestion-chip.interactive-fgt-chip.active {
+    background-color: var(--text-accent); /* Mau nen khi active */
+    color: var(--bg-primary); /* Mau chu khi active */
+    border-color: var(--text-accent);
+    font-weight: 600; /* Dam hon chut khi active */
+}
+.suggestion-chip.interactive-fgt-chip.active:hover:not(:disabled) {
+    background-color: #a6c9ff; /* Mau nen sang hon khi active va hover */
+    border-color: #a6c9ff;
+    color: var(--bg-primary);
+}
+
+.main-input-wrapper { /* Wrapper cho textarea va nut send */
+    display: flex;
+    align-items: flex-end; /* Giu can chinh duoi cung */
+    width: 100%;
+    /* Khong can background/border rieng neu user-input-area da co */
+}
 
 .user-input-area textarea {
     flex-grow: 1;
     background-color: transparent;
     border: none;
-    padding: calc(var(--spacing-unit)*0.5) var(--spacing-unit); /*  padding textarea */
+    padding: calc(var(--spacing-unit)*0.5) var(--spacing-unit);
     color: var(--text-primary);
     font-family: inherit;
     font-size: 0.95rem;
     line-height: 1.6;
-    max-height: 200px; 
-    min-height: calc(1.6rem); /* min-height dựa vào line-height */
+    max-height: 200px;
+    min-height: calc(1.6em + var(--spacing-unit) * 1); /* min-height dua vao line-height + padding */
     resize: none;
     overflow-y: auto;
-    margin-right: var(--spacing-unit); /* Khoảng cách với nút send */
+    margin-right: var(--spacing-unit); /* Khoang cach voi nut send */
 }
 
 .user-input-area textarea:focus {
@@ -65,41 +127,40 @@
 }
 
 .user-input-area .send-button {
-    margin-left: 0; 
+    margin-left: 0;
     background-color: var(--accent-primary);
     color: var(--bg-primary);
-    width: 36px;   
-    height: 36px;  
-    padding: 0;  
-    border-radius: 50%; /* tròn */
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
     border: none;
-    display: flex; /*  căn giữa icon */
+    display: flex;
     align-items: center;
     justify-content: center;
-    align-self: flex-end; /* Nằm ở dưới cùng */
-    flex-shrink: 0; /* Không co lại */
+    align-self: flex-end;
+    flex-shrink: 0;
     transition: background-color 0.15s ease-out, transform 0.1s ease-out;
 }
 
 .user-input-area .send-button svg {
-    font-size: 1.1rem; /* Kích thước icon */
-    margin: 0; 
+    font-size: 1.1rem;
+    margin: 0;
 }
 
 .user-input-area .send-button:hover:not(:disabled) {
-    background-color: #a6c9ff; /* Màu hover sáng hơn */
+    background-color: #a6c9ff;
     transform: scale(1.05);
 }
 .user-input-area .send-button:active:not(:disabled) {
     transform: scale(0.98);
 }
 
-
 .user-input-area .send-button:disabled {
     background-color: var(--bg-tertiary) !important;
     color: var(--text-muted) !important;
     opacity: 0.6;
-    transform: scale(1); /* Reset transform khi disabled */
+    transform: scale(1);
 }
 
 .input-footer-text {
@@ -108,9 +169,7 @@
     color: var(--text-muted);
     margin-top: calc(var(--spacing-unit) * 1.25);
     padding: 0 calc(var(--spacing-unit)*2);
-    max-width: 800px; /* Giống max-width input */
+    max-width: 800px;
     margin-left: auto;
     margin-right: auto;
 }
-
-/* Đang thi công ....*/

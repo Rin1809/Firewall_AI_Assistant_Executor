@@ -37,6 +37,7 @@
   --border-radius: 8px;
   --border-radius-small: 4px;
   --max-content-width: 850px; /* Chiều rộng tối đa cho nội dung hội thoại */
+   --text-accent-rgb: 138, 180, 248; 
 }
 
 /* --- Global Resets & Base Styles --- */
