@@ -5,7 +5,7 @@ import Sidebar from './components/Sidebar';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
-import { FiCheckSquare, FiSquare } from 'react-icons/fi'; // Cho nut select all
+import { FiCheckSquare, FiSquare, FiEdit, FiSave } from 'react-icons/fi'; // Thêm icons
 
 // --- Dinh nghia kieu du lieu (Interfaces) ---
 export interface ExecutionResult {
@@ -67,8 +67,12 @@ export interface ConversationBlock {
     data: any;
     id: string;
     timestamp: string;
-    isNew?: boolean;
+    isNew?: boolean; // Thêm thuộc tính isNew
     generatedType?: string;
+    // Thêm parentConversation để InteractionBlock có thể truy cập
+    // Tuy nhiên, cách này có thể làm phức tạp state. Xem xét lại nếu cần.
+    // Tạm thời bỏ qua, sẽ xử lý logic tìm code gốc trong App.tsx
+    // parentConversation?: ConversationBlock[];
 }
 // ---------------------------------------------
 
@@ -81,7 +85,7 @@ const CUSTOM_FILE_NAME_STORAGE_KEY = 'geminiExecutorCustomFileName';
 const FGT_INTERACTIVE_MODE_STORAGE_KEY = 'geminiExecutorFgtInteractiveMode';
 const FGT_CONTEXT_COMMANDS_STORAGE_KEY = 'geminiExecutorFgtContextCommands'; // Luu lua chon cmd FGT
 
-const NEW_BLOCK_ANIMATION_DURATION = 500; // ms
+const NEW_BLOCK_ANIMATION_DURATION = 500; // ms, thời gian animation chạy
 
 // Danh sach lenh mac dinh cho FGT context (giong backend)
 const DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
@@ -93,7 +97,7 @@ const DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
     "get system admin list", "show vpn ssl settings", "get vpn ipsec tunnel summary",
     "show user local", "show user group", "get system ha status",
     "diagnose hardware deviceinfo nic", "get webfilter profile",
-    "get application list", "show log setting"
+    "get application list", "show log setting", "show firewall policy"
 ];
 
 function App() {
@@ -142,23 +146,24 @@ function App() {
     return initial;
   });
 
-  // Luu lua chon cmd FGT context vao localStorage
-  useEffect(() => {
-    localStorage.setItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY, JSON.stringify(fortiGateContextCommands));
-  }, [fortiGateContextCommands]);
+  // State cho việc chỉnh sửa code
+  const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
+  const [currentEditingCode, setCurrentEditingCode] = useState<string | null>(null);
 
-
+  // Effect để clear cờ isNew sau khi animation
    useEffect(() => {
-        const timers: NodeJS.Timeout[] = [];
-        conversation.filter(b => b.isNew).forEach(block => {
+        const newBlockIds = conversation.filter(b => b.isNew).map(b => b.id);
+        if (newBlockIds.length > 0) {
             const timer = setTimeout(() => {
-                setConversation(prev => prev.map(b => (b.id === block.id ? { ...b, isNew: false } : b)));
-            }, NEW_BLOCK_ANIMATION_DURATION + 100);
-            timers.push(timer);
-        });
-        return () => timers.forEach(clearTimeout);
-   // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [conversation.filter(b => b.isNew).map(b => b.id).join(',')]);
+                setConversation(prevConv =>
+                    prevConv.map(b => (newBlockIds.includes(b.id) ? { ...b, isNew: false } : b))
+                );
+            }, NEW_BLOCK_ANIMATION_DURATION + 150); // Thêm chút delay
+            return () => clearTimeout(timer);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [JSON.stringify(conversation.filter(b => b.isNew).map(b => b.id))]); // Chỉ chạy khi ds ID block isNew thay đổi
+
 
     const toggleFortiGateInteractiveMode = useCallback(() => {
         setIsFortiGateInteractiveMode(prevMode => {
@@ -248,6 +253,56 @@ function App() {
   const toggleCollapse = useCallback((blockId: string) => setCollapsedStates(prev => ({ ...prev, [blockId]: !prev[blockId] })), []);
   const onToggleOutputExpand = useCallback((blockId: string, type: 'stdout' | 'stderr') => setExpandedOutputs(prev => ({ ...prev, [blockId]: { ...(prev[blockId] || { stdout: false, stderr: false }), [type]: !(prev[blockId]?.[type] ?? false) }})), []);
 
+  // ----- Hàm xử lý chỉnh sửa code -----
+  const handleToggleEditCode = useCallback((blockIdToEdit: string, codeInBlockData: string) => {
+    if (editingBlockId === blockIdToEdit) { // Đang sửa block này, muốn thoát/hủy
+        setEditingBlockId(null);
+        setCurrentEditingCode(null);
+        toast.info("Đã hủy chỉnh sửa.");
+    } else { // Muốn sửa block này (hoặc chuyển từ block khác)
+        if (editingBlockId && currentEditingCode !== null) {
+            // Tự động hủy thay đổi của block cũ nếu có
+            const oldBlock = conversation.find(b => b.id === editingBlockId);
+            if (oldBlock && oldBlock.data !== currentEditingCode) {
+                 toast.warn(`Thay đổi trên block trước chưa được lưu và đã bị hủy.`);
+            }
+        }
+        setEditingBlockId(blockIdToEdit);
+        setCurrentEditingCode(codeInBlockData);
+    }
+  }, [editingBlockId, currentEditingCode, conversation]);
+
+  const handleUpdateEditingCode = useCallback((newCode: string) => {
+    setCurrentEditingCode(newCode);
+  }, []);
+
+  const handleSaveEditedCode = useCallback((blockIdToSave: string) => {
+    if (currentEditingCode === null) return;
+    setConversation(prevConv =>
+        prevConv.map(b =>
+            b.id === blockIdToSave ? { ...b, data: currentEditingCode, isNew: true } : b // Đánh dấu là isNew để có thể có animation
+        )
+    );
+    setEditingBlockId(null);
+    setCurrentEditingCode(null);
+    toast.success("Đã lưu mã đã chỉnh sửa!");
+  }, [currentEditingCode]);
+
+  const handleCancelEditCode = useCallback(() => {
+    if (editingBlockId && currentEditingCode !== null) {
+        const oldBlock = conversation.find(b => b.id === editingBlockId);
+        if (oldBlock && oldBlock.data !== currentEditingCode) {
+             toast.info("Đã hủy các thay đổi chưa lưu.");
+        } else {
+            toast.info("Đã hủy chỉnh sửa.");
+        }
+    }
+    setEditingBlockId(null);
+    setCurrentEditingCode(null);
+  }, [editingBlockId, currentEditingCode, conversation]);
+  // ----- Hết hàm xử lý chỉnh sửa code -----
+
+
   const sendApiRequest = useCallback(async (endpoint: string, body: any, isFortiGateExecutionForExecuteEndpoint: boolean = false) => {
     const controller = new AbortController();
     const timeout = (endpoint === 'execute' && isFortiGateExecutionForExecuteEndpoint) ? 120000 : 90000;
@@ -271,34 +326,35 @@ function App() {
 
     if (isFgtRelatedForContextOrChat) {
         if (!fortiGateConfig.ipHost || !fortiGateConfig.username) {
-            if (endpoint !== 'fortigate_chat') {
+            if (endpoint !== 'fortigate_chat') { // Không báo lỗi cho chat, để chat có thể xử lý trường hợp này
                  toast.error("Thiếu IP/Host & Username FortiGate trong Cài đặt để lấy ngữ cảnh.");
             }
+            // Vẫn tiếp tục gửi request, backend sẽ xử lý việc thiếu context
         }
         // Them ds lenh ctx FGT da chon vao body request
         const selectedCommands = Object.entries(fortiGateContextCommands)
                                      .filter(([, isSelected]) => isSelected)
                                      .map(([cmd]) => cmd);
-        if (selectedCommands.length > 0) {
-            finalBody.fortigate_selected_context_commands = selectedCommands;
-        } else {
-            // Gui list rong neu ko chon lenh nao, backend se tu xu ly (co the dung default hoac ko lay ctx)
-            finalBody.fortigate_selected_context_commands = [];
-        }
+        // Luôn gửi key này, dù rỗng, để backend biết FE đã có logic chọn lệnh
+        finalBody.fortigate_selected_context_commands = selectedCommands;
 
+
+        // Khi debug hoặc chat, truyền đầy đủ config của FGT để backend có thể lấy context mới nhất nếu cần
         if (endpoint === 'debug') finalBody.fortigate_config_for_context = fortiGateConfig;
-        else finalBody.fortigate_config = fortiGateConfig;
+        else finalBody.fortigate_config = fortiGateConfig; // Cho generate, chat
     }
 
+    // Trường hợp đặc biệt cho /execute FortiGate, cần config đầy đủ
     if (endpoint === 'execute' && isFortiGateExecutionForExecuteEndpoint) {
         if (!fortiGateConfig.ipHost || !fortiGateConfig.username) {
             toast.error("Vui lòng nhập đủ thông tin kết nối FortiGate trong Cài đặt (IP/Host & Username).");
-            setIsSidebarOpen(true);
+            setIsSidebarOpen(true); // Mở sidebar để người dùng nhập
             clearTimeout(timeoutId);
             throw new Error("Thiếu cấu hình FortiGate");
         }
         finalBody = { ...finalBody, fortigate_config: fortiGateConfig };
     }
+
 
     try {
         const response = await fetch(`http://localhost:5001/api/${endpoint}`, {
@@ -332,13 +388,14 @@ function App() {
     const loadingBlock: ConversationBlock = { type: 'loading', data: targetOs === 'fortios' && isFortiGateInteractiveMode ? 'Đang tạo lệnh FortiGate...' : 'Đang tạo...', id: loadingId, timestamp: now, isNew: true };
 
     setConversation(prev => [...prev, newUserBlock, loadingBlock]);
-    setCollapsedStates(prev => ({ ...prev, [newUserBlock.id]: false }));
+    setCollapsedStates(prev => ({ ...prev, [newUserBlock.id]: false })); // Mở block user mới nhất
 
     const finalFileTypeForRequest = fileType === 'other' ? customFileName.trim() || 'txt' : fileType;
     const bodyForGenerate: any = {
         prompt: currentPrompt,
         target_os: targetOs,
         file_type: finalFileTypeForRequest
+        // fortiGateConfig và fortiGateContextCommands sẽ được thêm bởi sendApiRequest nếu cần
     };
 
     try {
@@ -355,7 +412,7 @@ function App() {
       toast.error(errorMessage);
       setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: Date.now().toString() + '_err', timestamp: new Date().toISOString(), isNew: true } : b));
     } finally { setIsLoading(false); }
-  }, [sendApiRequest, conversation, setPrompt, fileType, customFileName, targetOs, isFortiGateInteractiveMode, fortiGateConfig, fortiGateContextCommands]);
+  }, [sendApiRequest, conversation, setPrompt, fileType, customFileName, targetOs, isFortiGateInteractiveMode /*, fortiGateConfig, fortiGateContextCommands removed as they are handled by sendApiRequest */]);
 
   const handleFortiGateChat = useCallback(async (currentPrompt: string) => {
     setIsLoading(true);
@@ -406,7 +463,8 @@ function App() {
       const data = await sendApiRequest('fortigate_chat', {
         prompt: currentPrompt,
         conversation_history_for_chat_context: historyForChatContext || "(Không có lịch sử FortiOS gần đây)",
-      }, false);
+        // fortiGateConfig và fortiGateContextCommands sẽ được thêm bởi sendApiRequest
+      }, false); // isFortiGateExecutionForExecuteEndpoint = false
 
       setConversation(prev => prev.map(b =>
         b.id === loadingId
@@ -420,7 +478,7 @@ function App() {
       toast.error(errorMessage);
       setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: Date.now().toString() + '_chaterr', timestamp: new Date().toISOString(), isNew: true } : b));
     } finally { setIsLoading(false); }
-  }, [sendApiRequest, conversation, setPrompt, fortiGateConfig, fortiGateContextCommands]);
+  }, [sendApiRequest, conversation, setPrompt /*, fortiGateConfig, fortiGateContextCommands removed */]);
 
   const handleGenerateOrFortiGateChat = useCallback(async (currentPrompt: string) => {
     if (!currentPrompt.trim()) {
@@ -438,10 +496,16 @@ function App() {
     }
   }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat]);
 
-  const handleReviewCode = useCallback(async (codeToReview: string | null, blockId: string) => {
-    if (!codeToReview) { toast.warn("Ko có mã/lệnh để review."); return; }
+  const handleReviewCode = useCallback(async (codeToReviewFromBlock: string | null, blockId: string) => {
     const blockToReview = conversation.find(b => b.id === blockId);
-    const fileTypeToSend = blockToReview?.generatedType || 'py';
+    let codeToReview = codeToReviewFromBlock;
+    // Nếu block này đang được sửa, dùng code đang sửa
+    if (blockToReview?.type === 'ai-code' && editingBlockId === blockId && currentEditingCode !== null) {
+        codeToReview = currentEditingCode;
+    }
+    if (!codeToReview) { toast.warn("Ko có mã/lệnh để review."); return; }
+
+    const fileTypeToSend = blockToReview?.generatedType || 'py'; // Lấy generatedType từ block gốc
 
     setIsReviewing(true);
     const now = new Date().toISOString();
@@ -461,12 +525,18 @@ function App() {
         setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data: errorData, id: Date.now().toString() + '_rerr', timestamp: new Date().toISOString(), isNew: true } : b));
         toast.error(err.message || 'Lỗi review.');
     } finally { setIsReviewing(false); }
-  }, [sendApiRequest, conversation]);
+  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode]);
 
-  const handleExecute = useCallback(async (codeToExecute: string | null, blockId: string) => {
-    if (!codeToExecute) { toast.warn("Ko có mã/lệnh để thực thi."); return; }
+  const handleExecute = useCallback(async (codeToExecuteFromBlock: string | null, blockId: string) => {
     const blockToExecute = conversation.find(b => b.id === blockId);
-    const execType = blockToExecute?.generatedType || 'py';
+    let codeToExecute = codeToExecuteFromBlock;
+    // Nếu block này đang được sửa, dùng code đang sửa
+     if (blockToExecute?.type === 'ai-code' && editingBlockId === blockId && currentEditingCode !== null) {
+        codeToExecute = currentEditingCode;
+    }
+    if (!codeToExecute) { toast.warn("Ko có mã/lệnh để thực thi."); return; }
+
+    const execType = blockToExecute?.generatedType || 'py'; // Lấy generatedType từ block gốc
 
     setIsExecuting(true);
     const isFGTExecution = execType === 'fortios';
@@ -481,13 +551,14 @@ function App() {
 
     const endpoint = 'execute';
     let payload: any = { code: codeToExecute, file_type: execType };
-    if (!isFGTExecution) {
+    if (!isFGTExecution) { // Chỉ thêm run_as_admin nếu không phải FGT
         payload.run_as_admin = runAsAdmin;
     }
+    // fortiGateConfig sẽ được thêm bởi sendApiRequest nếu isFGTExecution là true
 
     try {
         const data: ExecutionResult = await sendApiRequest(endpoint, payload, isFGTExecution);
-        resultData = { ...data, codeThatFailed: codeToExecute, executed_file_type: execType };
+        resultData = { ...data, codeThatFailed: codeToExecute, executed_file_type: execType }; // Luu code da thuc thi
 
         if (data.warning) toast.warning(data.warning, { autoClose: 7000, toastId: `warning-${executionBlockId}` });
         const stdoutErrorKeywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
@@ -509,41 +580,73 @@ function App() {
              else setConversation(prev => [...prev, blockToAdd]);
         }
     }
-  }, [runAsAdmin, conversation, sendApiRequest, fortiGateConfig]);
+  }, [runAsAdmin, conversation, sendApiRequest, editingBlockId, currentEditingCode /*, fortiGateConfig removed */]);
 
 
-  const handleDebug = useCallback(async (codeToDebug: string | null, lastExecutionResult: ExecutionResult | null, blockId: string) => {
+  const handleDebug = useCallback(async (codeToDebugFromExecResult: string | null, lastExecutionResult: ExecutionResult | null, blockIdOfExecution: string) => {
        const hasErrorSignal = (execResult: ExecutionResult | null): boolean => {
            if (!execResult) return false;
            const keywords = ['lỗi', 'error', 'fail', 'cannot', 'unable', 'traceback', 'exception', 'not found', 'không tìm thấy', 'invalid', 'command parse error', 'command_cli_error'];
            const isFGTError = execResult.executed_file_type === 'fortios' && execResult.return_code !== 0;
            return execResult.return_code !== 0 || !!execResult.error?.trim() || execResult.return_code === -200 || isFGTError || (!!execResult.output?.trim() && keywords.some(kw => execResult.output!.toLowerCase().includes(kw)));
        };
-       if (!codeToDebug || !hasErrorSignal(lastExecutionResult)) { toast.warn("Cần mã/lệnh và kết quả lỗi để gỡ rối."); return; }
 
-       const fileTypeToSend = lastExecutionResult?.executed_file_type || 'py';
+       let codeForDebugging = codeToDebugFromExecResult; // Đây là code đã thực thi gây lỗi (codeThatFailed)
+
+       // Tìm block ai-code gốc đứng TRƯỚC block execution bị lỗi
+       const executionBlockIndex = conversation.findIndex(b => b.id === blockIdOfExecution);
+       let originalAICodeBlock: ConversationBlock | undefined;
+       if (executionBlockIndex > -1) {
+           for (let i = executionBlockIndex - 1; i >= 0; i--) {
+               if (conversation[i].type === 'ai-code') {
+                   originalAICodeBlock = conversation[i];
+                   break;
+               }
+           }
+       }
+
+       // Nếu block AI code gốc đó đang được sửa, thì code để debug phải là code đang sửa
+       if (originalAICodeBlock && editingBlockId === originalAICodeBlock.id && currentEditingCode !== null) {
+           codeForDebugging = currentEditingCode;
+       }
+
+
+       if (!codeForDebugging || !hasErrorSignal(lastExecutionResult)) {
+           toast.warn("Cần mã/lệnh và kết quả lỗi để gỡ rối."); return;
+       }
+
+       const fileTypeToSend = lastExecutionResult?.executed_file_type || 'py'; // Loại file của code gây lỗi
 
        setIsDebugging(true);
        const now = new Date().toISOString();
        const loadingId = Date.now().toString() + '_dload';
        const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang gỡ rối...', id: loadingId, timestamp: now, isNew: true };
-       const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
+       const originalBlockIndex = conversation.findIndex(b => b.id === blockIdOfExecution);
        const newConv = [...conversation];
        if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
        setConversation(newConv);
 
        let userPromptForDebug = "(Ko tìm thấy prompt gốc)";
-       let foundExec = false;
-       for (const block of [...conversation].reverse()) {
-            if (!foundExec && block.id === blockId && block.type === 'execution') foundExec = true;
-            if (foundExec && block.type === 'user') { userPromptForDebug = block.data; break; }
+       // Tìm user prompt gần nhất TRƯỚC block AI code gốc (nếu tìm được) hoặc trước block execution
+       const searchEndIndex = originalAICodeBlock ? conversation.findIndex(b => b.id === originalAICodeBlock!.id) : executionBlockIndex;
+       if (searchEndIndex > -1) {
+           for (let i = searchEndIndex - 1; i >= 0; i--) {
+               if (conversation[i].type === 'user') {
+                   userPromptForDebug = conversation[i].data;
+                   break;
+               }
+           }
        }
+
 
        try {
            const payload: any = {
-               prompt: userPromptForDebug, code: codeToDebug,
-               stdout: lastExecutionResult?.output ?? '', stderr: lastExecutionResult?.error ?? '',
+               prompt: userPromptForDebug,
+               code: codeForDebugging, // Dùng code đã được xác định (có thể là code đang sửa)
+               stdout: lastExecutionResult?.output ?? '',
+               stderr: lastExecutionResult?.error ?? '',
                file_type: fileTypeToSend,
+               // fortiGateConfigForContext và fortiGateSelectedContextCommands sẽ được thêm bởi sendApiRequest nếu cần
            };
 
            const data: DebugResult = await sendApiRequest('debug', payload);
@@ -554,21 +657,30 @@ function App() {
            setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data: errorData, id: Date.now().toString() + '_dbgerr', timestamp: new Date().toISOString(), isNew: true } : b));
            toast.error(`Gỡ rối thất bại: ${err.message}`);
        } finally { setIsDebugging(false); }
-   }, [conversation, sendApiRequest, fortiGateConfig, fortiGateContextCommands]);
+   }, [conversation, sendApiRequest, editingBlockId, currentEditingCode /*, fortiGateConfig, fortiGateContextCommands removed */]);
 
    const applyCorrectedCode = useCallback((correctedCode: string, originalDebugBlockId: string) => {
        const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
-       const newGeneratedType = debugBlock?.data?.original_language || 'py';
+       const newGeneratedType = debugBlock?.data?.original_language || 'py'; // Lấy ngôn ngữ từ debug result
 
        const newBlock: ConversationBlock = {
-           type: 'ai-code', data: correctedCode, generatedType: newGeneratedType,
-           id: Date.now().toString() + '_ac', timestamp: new Date().toISOString(), isNew: true
+           type: 'ai-code',
+           data: correctedCode,
+           generatedType: newGeneratedType,
+           id: Date.now().toString() + '_ac',
+           timestamp: new Date().toISOString(),
+           isNew: true
        };
        const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
        const newConv = [...conversation];
        if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, newBlock); else newConv.push(newBlock);
        setConversation(newConv);
-       toast.success("Đã áp dụng code sửa lỗi.");
+
+       // Tự động vào chế độ sửa cho block code mới này
+       setEditingBlockId(newBlock.id);
+       setCurrentEditingCode(correctedCode);
+
+       toast.success("Đã áp dụng code sửa lỗi. Bạn có thể sửa thêm hoặc thực thi.");
    }, [conversation]);
 
   const handleInstallPackage = useCallback(async (packageName: string, originalDebugBlockId: string) => {
@@ -583,30 +695,34 @@ function App() {
      let resultData : InstallationResult | null = null;
 
      try {
+         // sendApiRequest không dùng cho install_package vì nó không cần model_config
          const response = await fetch('http://localhost:5001/api/install_package', {
              method: 'POST', headers: { 'Content-Type': 'application/json' },
              body: JSON.stringify({ package_name: packageName }),
          });
          const data: InstallationResult = await response.json();
-         resultData = { ...data, package_name: packageName };
+         resultData = { ...data, package_name: packageName }; // Đảm bảo package_name có trong kết quả
          if (data.success) toast.update(toastId, { render: `Cài ${packageName} thành công!`, type: "success", isLoading: false, autoClose: 4000 });
-         else { const errMsg = data.error || data.output || "Cài đặt thất bại."; toast.update(toastId, { render: `Cài ${packageName} thất bại. ${errMsg.split('\n')[0]}`, type: "error", isLoading: false, autoClose: 6000 }); }
+         else {
+             const errMsg = data.error || data.output || "Cài đặt thất bại.";
+             toast.update(toastId, { render: `Cài ${packageName} thất bại. ${errMsg.split('\n')[0]}`, type: "error", isLoading: false, autoClose: 6000 });
+         }
      } catch (err: any) {
          resultData = { success: false, message: `Lỗi kết nối khi cài.`, output: "", error: err.message, package_name: packageName };
          toast.update(toastId, { render: `Lỗi cài đặt: ${err.message}`, type: "error", isLoading: false, autoClose: 5000 });
      } finally {
          setIsInstalling(false);
-          if (resultData) {
+          if (resultData) { // Luôn thêm block kết quả, dù thành công hay thất bại
               const blockToAdd = { ...installBlockBase, data: resultData } as ConversationBlock;
               if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
               else setConversation(prev => [...prev, blockToAdd]);
           }
      }
-  }, [conversation]);
+  }, [conversation]); // sendApiRequest không dùng ở đây
 
   const handleExplain = useCallback(async (blockId: string, contentToExplain: any, context: string) => {
     const blockToExplain = conversation.find(b => b.id === blockId);
-    const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined;
+    const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined; // Chỉ gửi file_type nếu context là 'code'
 
     setIsExplaining(true);
     const now = new Date().toISOString();
@@ -618,9 +734,13 @@ function App() {
     setConversation(newConv);
 
     let processedContent = contentToExplain;
-    if (typeof contentToExplain === 'object' && contentToExplain !== null) {
+    // Xử lý code đang sửa cho context 'code'
+    if (context === 'code' && editingBlockId === blockId && currentEditingCode !== null) {
+        processedContent = currentEditingCode;
+    } else if (typeof contentToExplain === 'object' && contentToExplain !== null) {
         try {
             let contentToSend = { ...contentToExplain };
+            // Loại bỏ codeThatFailed khỏi execution_result và debug_result trước khi gửi đi giải thích
             if ((context === 'execution_result' || context === 'debug_result') && 'codeThatFailed' in contentToSend) {
                 delete contentToSend.codeThatFailed;
             }
@@ -630,9 +750,11 @@ function App() {
         processedContent = String(contentToExplain);
     }
 
+
     try {
         const payload:any = {
-            content: processedContent, context,
+            content: processedContent,
+            context,
         };
         if (fileTypeToSend) payload.file_type = fileTypeToSend;
 
@@ -644,8 +766,12 @@ function App() {
         setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data: errorData, id: Date.now().toString() + '_experr', timestamp: new Date().toISOString(), isNew: true } : b));
         toast.error(err.message || 'Lỗi giải thích.');
     } finally { setIsExplaining(false); }
-  }, [sendApiRequest, conversation]);
+  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode]);
 
+  // Luu lua chon cmd FGT context vao localStorage
+  useEffect(() => {
+    localStorage.setItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY, JSON.stringify(fortiGateContextCommands));
+  }, [fortiGateContextCommands]);
 
   const isBusy = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
 
@@ -673,6 +799,13 @@ function App() {
         targetOs={targetOs}
         isFortiGateInteractiveMode={isFortiGateInteractiveMode}
         onToggleFortiGateInteractiveMode={toggleFortiGateInteractiveMode}
+        // Props cho chỉnh sửa code
+        editingBlockId={editingBlockId}
+        currentEditingCode={currentEditingCode}
+        onToggleEditCode={handleToggleEditCode}
+        onUpdateEditingCode={handleUpdateEditingCode}
+        onSaveEditedCode={handleSaveEditedCode}
+        onCancelEditCode={handleCancelEditCode}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -685,7 +818,7 @@ function App() {
         uiApiKey={uiApiKey}
         useUiApiKey={useUiApiKey}
         onApplyUiApiKey={handleApplyUiApiKey}
-        onUseEnvKey={handleUseEnvKey}
+        onUseEnvKey={handleUseEnvKey} // SỬA Ở ĐÂY
         targetOs={targetOs}
         fileType={fileType}
         customFileName={customFileName}

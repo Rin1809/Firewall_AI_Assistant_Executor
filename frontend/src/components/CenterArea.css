@@ -670,6 +670,92 @@ background-color: #40444b;
 border-color: #50555b;
 color: var(--text-primary);
 }
+
+/* --- Textarea cho chỉnh sửa code --- */
+.code-editor-textarea {
+  width: 100%;
+  min-height: 150px;
+  max-height: 500px; /* Giống max-height của SyntaxHighlighter */
+  overflow-y: auto; /* Scroll dọc */
+  overflow-x: auto; /* Scroll ngang nếu dòng quá dài */
+  background-color: var(--bg-code) !important; /* Ghi đè nếu có style khác */
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-small);
+  padding: var(--spacing-unit);
+  font-family: var(--code-font-family) !important; /* Ghi đè */
+  font-size: 0.875rem !important; /* Ghi đè */
+  line-height: 1.45 !important; /* Ghi đè */
+  resize: vertical; /* Cho phép người dùng thay đổi chiều cao */
+  tab-size: 4;
+  white-space: pre; /* Giữ nguyên khoảng trắng, tab và không tự xuống dòng */
+  word-break: normal; /* Để scroll ngang hoạt động */
+  outline: none;
+  box-shadow: none;
+}
+.code-editor-textarea:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 1px var(--accent-primary);
+}
+
+/* Header khi đang chỉnh sửa code */
+.block-header.editing-header {
+  display: flex;
+  align-items: center;
+  padding: calc(var(--spacing-unit) * 0.75) 0; /* Chỉ padding trên dưới */
+  margin-bottom: calc(var(--spacing-unit) * 0.5);
+  color: var(--text-accent);
+  font-style: italic;
+  font-size: 0.85rem;
+}
+.editing-title-text {
+  display: inline-flex;
+  align-items: center;
+}
+
+
+/* Nút Sửa trong code-block-header */
+.code-block-header .icon-button.edit-code-button {
+  color: var(--text-muted);
+}
+.code-block-header .icon-button.edit-code-button:hover {
+  color: var(--text-accent);
+  background-color: var(--bg-secondary);
+}
+
+/* --- Nút Save và Cancel Edit --- */
+:root {
+  /* Thêm biến màu nếu chưa có */
+  --success-color-rgb: 129, 201, 149; /* Từ #81c995 */
+  --danger-color-rgb: 242, 139, 130;   /* Từ #f28b82 */
+}
+
+.block-actions-area button.save-code {
+  color: var(--success-color);
+  border-color: rgba(var(--success-color-rgb), 0.4);
+}
+.block-actions-area button.save-code:hover:not(:disabled) {
+  background-color: rgba(var(--success-color-rgb), 0.15);
+  border-color: rgba(var(--success-color-rgb), 0.7);
+  color: #a1e0b2; /* Sáng hơn chút */
+}
+.block-actions-area button.save-code:disabled {
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
+  background-color: var(--bg-tertiary) !important;
+}
+
+.block-actions-area button.cancel-edit {
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+.block-actions-area button.cancel-edit:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: #50555b;
+}
+
+
 .block-actions-area button.execute { color: var(--success-color); border-color: rgba(var(--success-color), 0.3); }
 .block-actions-area button.execute:hover:not(:disabled) { background-color: rgba(var(--success-color), 0.15); border-color: rgba(var(--success-color), 0.5); }
 .block-actions-area button.debug { color: var(--warning-color); border-color: rgba(var(--warning-color), 0.3); }

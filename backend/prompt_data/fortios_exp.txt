@@ -1845,3 +1845,19 @@ end
 show system interface
 
 
+# Ví dụ Tạo 1 rules mới cho phép port3 ra internet với các dịch vụ giới hạn
+config firewall policy
+    edit 100
+        set name "Port3_Internet_Access_Limited"
+        set srcintf port3
+        set dstintf port1
+        set srcaddr all
+        set dstaddr all
+        set action accept
+        set schedule always
+        set service HTTP HTTPS DNS SMTP POP3S IMAPS
+        set nat enable
+        set logtraffic all
+    next
+end
+show firewall policy

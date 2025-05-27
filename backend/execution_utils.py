@@ -37,9 +37,10 @@ DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
     "show user group",
     "get system ha status",
     "diagnose hardware deviceinfo nic",
-    "get webfilter profile",
+    "get webfilter profile ",
     "get application list",
-    "show log setting"
+    "show log setting",
+    "show firewall policy"
     #"diagnose debug report", # Lenh nay rat dai, can nhac
 ]
 

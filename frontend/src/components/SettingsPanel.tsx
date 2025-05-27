@@ -33,6 +33,15 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   fortiGateContextCommandsConfig,
 }) => {
 
+  // Dinh nghia index cho animation delay theo thu tu DOM - CHUYỂN VÀO ĐÂY
+  const modelSectionIndex = 0;
+  const apiKeySectionIndex = 1;
+  const paramsSectionIndex = 2;
+  const targetEnvSectionIndex = 3;
+  const fortigateConnectionSectionIndex = 4;
+  const fortigateContextCommandsSectionIndex = 5;
+  const advancedSettingsSectionIndex = 6;
+
   const getSuggestedFileTypes = (os: TargetOS): { value: string; label: string }[] => {
     switch (os) {
       case 'windows': return [{ value: 'bat', label: '.bat' }, { value: 'ps1', label: '.ps1' }, { value: 'py', label: '.py' }, { value: 'other', label: 'Khác...' }];
@@ -55,17 +64,10 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
     // Co the return UI loading/default
     console.warn("Cfg cmd context FGT chua khoi tao dung.");
   }
-  const allContextCommandsSelected = fortiGateContextCommandsConfig.list.every(cmd => fortiGateContextCommandsConfig.selected[cmd]);
-  const someContextCommandsSelected = fortiGateContextCommandsConfig.list.some(cmd => fortiGateContextCommandsConfig.selected[cmd]);
+  const commandList = fortiGateContextCommandsConfig?.list || [];
+  const allContextCommandsSelected = commandList.every(cmd => fortiGateContextCommandsConfig?.selected?.[cmd]);
+  const someContextCommandsSelected = commandList.some(cmd => fortiGateContextCommandsConfig?.selected?.[cmd]);
 
-  // Dinh nghia index cho animation delay theo thu tu DOM
-  const modelSectionIndex = 0;
-  const apiKeySectionIndex = 1;
-  const paramsSectionIndex = 2;
-  const targetEnvSectionIndex = 3;
-  const fortigateConnectionSectionIndex = 4;
-  const fortigateContextCommandsSectionIndex = 5;
-  const advancedSettingsSectionIndex = 6;
 
   return (
     <div className="settings-panel">
@@ -185,11 +187,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
                     </label>
                 </div>
                 <div className="command-checkbox-list">
-                    {fortiGateContextCommandsConfig.list.map((cmd, index) => (
+                    {commandList.map((cmd, index) => (
                         <div key={cmd + index} className="command-checkbox-item admin-checkbox-container">
-                            <input type="checkbox" id={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} name={`fgtCtxCmd_${cmd}`} checked={!!fortiGateContextCommandsConfig.selected[cmd]} onChange={onConfigChange} disabled={isDisabled} className="admin-checkbox"/>
+                            <input type="checkbox" id={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} name={`fgtCtxCmd_${cmd}`} checked={!!fortiGateContextCommandsConfig?.selected?.[cmd]} onChange={onConfigChange} disabled={isDisabled} className="admin-checkbox"/>
                             <label htmlFor={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} className="admin-checkbox-label command-label">
-                                {fortiGateContextCommandsConfig.selected[cmd] ? <FiCheckSquare style={{color: 'var(--accent-primary)', fontSize: '0.9em'}}/> : <FiSquare style={{fontSize: '0.9em'}} />}
+                                {fortiGateContextCommandsConfig?.selected?.[cmd] ? <FiCheckSquare style={{color: 'var(--accent-primary)', fontSize: '0.9em'}}/> : <FiSquare style={{fontSize: '0.9em'}} />}
                                 <code>{cmd}</code>
                             </label>
                         </div>
