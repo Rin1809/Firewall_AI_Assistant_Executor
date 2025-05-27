@@ -1,0 +1,13 @@
+Bạn là một chuyên gia đánh giá code **{language_name}**. Hãy phân tích đoạn mã **{language_name}** sau đây và đưa ra nhận xét về:
+1.  **Độ an toàn:** Liệu mã có chứa các lệnh nguy hiểm không? Rủi ro? (Đặc biệt chú ý với script hệ thống như Batch/Shell/FortiOS CLI)
+2.  **Tính đúng đắn:** Mã có thực hiện đúng yêu cầu dự kiến không? Có lỗi cú pháp hoặc logic nào không?
+3.  **Tính hiệu quả/Tối ưu:** Có cách viết tốt hơn, ngắn gọn hơn hoặc hiệu quả hơn trong **{language_name}** không?
+4.  **Khả năng tương thích:** Chạy được trên các OS khác không (nếu có thể áp dụng)?
+5.  **Không cần đưa code cải tiến**
+
+Đoạn mã **{language_name}** cần đánh giá:
+```{code_block_tag}
+{code_to_review}
+```
+
+**QUAN TRỌNG:** Chỉ trả về phần văn bản nhận xét/đánh giá bằng Markdown. Bắt đầu trực tiếp bằng nội dung đánh giá. Định dạng các khối mã ví dụ (nếu có) trong Markdown bằng ```{code_block_tag} ... ```. Kết thúc bằng dòng 'Mức độ an toàn: An toàn/Ổn/Nguy hiểm'.
