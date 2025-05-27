@@ -19,10 +19,10 @@ Bạn là một chuyên gia gỡ lỗi **{language_name}**. Người dùng đã 
 ```text
 {processed_stderr}
 ```
-
+{fortigate_context_section}
 **Nhiệm vụ của bạn:**
-a.  **Phân tích:** Dựa vào **Yêu cầu ban đầu của người dùng**, `stderr`, `stdout` và mã nguồn **{language_name}**, hãy xác định nguyên nhân chính xác gây ra lỗi. Việc hiểu rõ **Yêu cầu ban đầu** là rất quan trọng để biết mục tiêu của người dùng.
-b.  **Giải thích:** Cung cấp một giải thích rõ ràng, ngắn gọn về lỗi cho người dùng bằng Markdown. Nếu có thể, hãy liên hệ giải thích với **Yêu cầu ban đầu của người dùng**.
+a.  **Phân tích:** Dựa vào **Yêu cầu ban đầu của người dùng**, `stderr`, `stdout`, mã nguồn **{language_name}**, và **Thông tin ngữ cảnh FortiGate** (nếu có), hãy xác định nguyên nhân chính xác gây ra lỗi. Việc hiểu rõ **Yêu cầu ban đầu** và **Thông tin ngữ cảnh FortiGate** là rất quan trọng để biết mục tiêu của người dùng.
+b.  **Giải thích:** Cung cấp một giải thích rõ ràng, ngắn gọn về lỗi cho người dùng bằng Markdown. Nếu có thể, hãy liên hệ giải thích với **Yêu cầu ban đầu của người dùng** và **Thông tin ngữ cảnh FortiGate** (nếu có).
 c.  **Đề xuất Hành động / Cài đặt:**
     *   **QUAN TRỌNG (CHỈ CHO PYTHON):** Nếu lỗi là `ModuleNotFoundError` (và ngôn ngữ là Python), hãy xác định tên module và đề xuất lệnh `pip install` trong khối ```bash ... ``` DUY NHẤT.
     *   Nếu lỗi do nguyên nhân khác (thiếu file, quyền, cú pháp sai, lệnh không tồn tại trong Batch/Shell/FortiOS CLI, cấu hình môi trường...) hoặc **ngôn ngữ không phải Python**, hãy đề xuất hành động người dùng cần làm thủ công. **KHÔNG đề xuất `pip install` cho ngôn ngữ không phải Python.**
@@ -30,6 +30,7 @@ d.  **Sửa lỗi Code:** Nếu lỗi có thể sửa trực tiếp trong mã **
 
 **QUAN TRỌNG:**
 *   Trả về phần giải thích và đề xuất hành động (bằng Markdown) trước.
+*   TUYỆT ĐỐI KHÔNG được comment trong code
 *   Nếu có lệnh cài đặt pip (chỉ cho Python), đặt nó trong khối ```bash ... ``` riêng.
 *   Sau đó, nếu có thể sửa code, cung cấp khối mã ```{code_block_tag} ... ``` CUỐI CÙNG chứa code đã sửa. Không thêm lời dẫn hay giải thích nào khác sau khối mã này.
 *   Nếu không sửa được code, chỉ cần giải thích và (nếu có) đề xuất hành động/cài đặt.

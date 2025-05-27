@@ -13,7 +13,7 @@ load_dotenv(dotenv_path='../.env')
 
 # Khoi tao Flask app
 app = Flask(__name__) # Doi tuong app duoc tao o day
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}) # Cho phep CORS
+CORS(app, resources={r"/api/*": {"origins": "http://localhost:5174"}}) # Cho phep CORS từ port 5174
 
 # --- Cau hinh & Constants (cac module khac se import tu day) ---
 # Dua config vao app.config de current_app co the truy cap
@@ -30,26 +30,26 @@ app.config['SAFETY_SETTINGS_MAP'] = {
 
 # Import va dang ky Blueprint cho routes
 # Import sau khi 'app' va app.config da duoc khoi tao
-from .routes import api_bp 
-app.register_blueprint(api_bp) 
+from .routes import api_bp
+app.register_blueprint(api_bp)
 
 # --- Main Execution ---
 if __name__ == '__main__':
-    if not app.debug: 
+    if not app.debug:
         if not os.path.exists('logs'):
             os.mkdir('logs')
         file_handler = RotatingFileHandler('logs/gemini_executor.log', maxBytes=102400, backupCount=10)
         file_handler.setFormatter(logging.Formatter(
             '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
         ))
-        file_handler.setLevel(logging.INFO) 
+        file_handler.setLevel(logging.INFO)
         app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO) 
+        app.logger.setLevel(logging.INFO)
 
     app.logger.info('Backend Gemini UI Executor dang khoi dong...')
     print("Backend đang chạy tại http://localhost:5001")
-    
-    if sys.platform == "win32": 
+
+    if sys.platform == "win32":
         try:
             is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
             if is_admin:
@@ -64,5 +64,5 @@ if __name__ == '__main__':
             warn_msg = "Ko the check quyen admin khi khoi dong."
             app.logger.warning(warn_msg)
             print(f"[CẢNH BÁO] {warn_msg}")
-    
-    app.run(debug=True, port=5001) 
+
+    app.run(debug=True, port=5001)

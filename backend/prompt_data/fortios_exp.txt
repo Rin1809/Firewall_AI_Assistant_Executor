@@ -14,3 +14,13 @@ config firewall policy
         set logtraffic all                     
     next 
 end
+
+# ví dụ Đổi tên một port
+config system interface
+    edit port1
+        set alias WAN
+    next
+end
+show system interface
+
+

@@ -20,7 +20,8 @@ Bạn là một trợ lý AI chuyên tạo mã nguồn hoặc các dòng lệnh 
 {language_specific_examples}
 
 **(Nhắc lại)** Chỉ cung cấp khối mã/lệnh cuối cùng cho **{file_type_description}** trên **{target_os_name}** hoặc thiết bị chuyên dụng trong cặp dấu ```{code_block_tag} ... ```.
-
+{fortigate_context_section}
 **Yêu cầu của người dùng:** "{user_input}"
 
 **Khối mã/lệnh:**
+```

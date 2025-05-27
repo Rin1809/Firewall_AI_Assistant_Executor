@@ -4,10 +4,9 @@ import json
 from flask import current_app # Su dung current_app de lay logger va config
 from .helpers import get_language_name
 
-# Hàm đọc nội dung từ file prompt instruction/example
+# Ham doc nd file prompt instruction/example
 def read_prompt_file(filename, default_content=""):
     """Doc file instruction/example, fallback default."""
-    # Su dung current_app.config de lay PROMPT_DATA_DIR
     prompt_data_dir = current_app.config.get('PROMPT_DATA_DIR', os.path.join(os.path.dirname(__file__), 'prompt_data'))
     logger = current_app.logger
 
@@ -28,10 +27,9 @@ def read_prompt_file(filename, default_content=""):
         logger.error(f"Loi doc file prompt '{filepath}': {e}")
         return default_content
 
-# Hàm load template prompt chính
+# Ham load template prompt chinh
 def load_prompt_template(filename, default_content=""):
     """Load template prompt chinh tu thu muc prompts."""
-    # Su dung current_app.config de lay PROMPTS_DIR
     prompts_dir = current_app.config.get('PROMPTS_DIR', os.path.join(os.path.dirname(__file__), 'prompt_data', 'prompts'))
     logger = current_app.logger
     filepath = os.path.join(prompts_dir, filename)
@@ -46,7 +44,7 @@ def load_prompt_template(filename, default_content=""):
         return default_content
 
 # Ham tao prompt yeu cau Gemini sinh code/lenh
-def create_prompt(user_input, backend_os_name, target_os_name, file_type):
+def create_prompt(user_input, backend_os_name, target_os_name, file_type, fortigate_context_data=None):
     """Tao prompt sinh code/lenh."""
     file_extension = ""
     file_type_description = ""
@@ -63,31 +61,31 @@ def create_prompt(user_input, backend_os_name, target_os_name, file_type):
     code_block_tag = file_extension if file_extension and file_extension.isalnum() else 'code'
 
     is_target_fortios = target_os_name.lower() == 'fortios'
-    is_fortigate_request_context = "fortigate" in user_input.lower() or "fortios" in user_input.lower() or is_target_fortios
+    is_fortigate_request_context_input = "fortigate" in user_input.lower() or "fortios" in user_input.lower()
 
     lang_key_for_prompt_files = file_extension
     if is_target_fortios and file_extension in ['txt', 'conf', 'cli', 'log', 'fortios']:
         lang_key_for_prompt_files = 'fortios'
         code_block_tag = 'fortios'
         file_type_description = f"các lệnh FortiOS CLI (thường lưu dưới dạng `.{file_extension}` hoặc tương tự, để chạy trên FortiGate)"
-    elif is_fortigate_request_context and file_extension in ['txt', 'conf', 'cli', 'fortios', 'log']:
+    elif is_fortigate_request_context_input and file_extension in ['txt', 'conf', 'cli', 'fortios', 'log']:
         lang_key_for_prompt_files = 'fortios'
         code_block_tag = 'fortios'
         file_type_description = f"các lệnh FortiOS CLI (thường lưu dưới dạng `.{file_extension}` hoặc tương tự)"
-    elif file_extension == 'fortios': 
+    elif file_extension == 'fortios':
         lang_key_for_prompt_files = 'fortios'
         code_block_tag = 'fortios'
         file_type_description = f"các lệnh FortiOS CLI (để chạy trên FortiGate)"
-    
+
     language_specific_instructions = read_prompt_file(f"{lang_key_for_prompt_files}_instructions.txt", read_prompt_file("default_instructions.txt"))
     language_specific_examples = read_prompt_file(f"{lang_key_for_prompt_files}_exp.txt", read_prompt_file("default_exp.txt"))
-    
+
     script_cli_guidance = ""
     if lang_key_for_prompt_files == 'fortios':
         script_cli_guidance = f"""
 6.  Nếu là các lệnh CLI cho thiết bị (ví dụ: FortiGate, mục tiêu là `{target_os_name}`):
 {language_specific_instructions}"""
-    else: 
+    else:
         script_cli_guidance = f"""
 5.  Nếu là script ({get_language_name(lang_key_for_prompt_files)}):
 {language_specific_instructions}"""
@@ -96,6 +94,17 @@ def create_prompt(user_input, backend_os_name, target_os_name, file_type):
     if not prompt_template:
         return "Lỗi: Không thể tải template prompt để sinh mã."
 
+    fortigate_context_section_str = ""
+    if fortigate_context_data and \
+       (is_target_fortios or is_fortigate_request_context_input or lang_key_for_prompt_files == 'fortios'):
+        # Bo sung them thong tin ngu canh FortiGate
+        fortigate_context_section_str = f"""
+**Thông tin ngữ cảnh FortiGate hiện tại (được trích xuất tự động để Gemini tham khảo):**
+```text
+{fortigate_context_data[:15000]}
+```
+""" # Gioi han do dai context neu qua lon
+
     return prompt_template.format(
         backend_os_name=backend_os_name,
         target_os_name=target_os_name,
@@ -103,7 +112,8 @@ def create_prompt(user_input, backend_os_name, target_os_name, file_type):
         code_block_tag=code_block_tag,
         script_cli_guidance=script_cli_guidance,
         language_specific_examples=language_specific_examples,
-        user_input=user_input
+        user_input=user_input,
+        fortigate_context_section=fortigate_context_section_str # Day la placeholder moi
     ).strip()
 
 # Ham tao prompt yeu cau Gemini danh gia code
@@ -116,7 +126,7 @@ def create_review_prompt(code_to_review, language):
     prompt_template = load_prompt_template("review_code_prompt.txt")
     if not prompt_template:
         return "Lỗi: Không thể tải template prompt để đánh giá mã."
-        
+
     return prompt_template.format(
         language_name=language_name,
         code_block_tag=code_block_tag,
@@ -124,7 +134,7 @@ def create_review_prompt(code_to_review, language):
     ).strip()
 
 # Ham tao prompt yeu cau Gemini go loi code
-def create_debug_prompt(original_prompt, failed_code, stdout, stderr, language):
+def create_debug_prompt(original_prompt, failed_code, stdout, stderr, language, fortigate_context_data=None):
     """Tao prompt go loi code."""
     language_name = get_language_name(language)
     code_block_tag = language if language and language.isalnum() else 'code'
@@ -138,13 +148,26 @@ def create_debug_prompt(original_prompt, failed_code, stdout, stderr, language):
     if not prompt_template:
         return "Lỗi: Không thể tải template prompt để gỡ lỗi mã."
 
+    fortigate_context_section_str = ""
+    if fortigate_context_data and \
+       (language.lower() == 'fortios' or \
+        (original_prompt and ("fortigate" in original_prompt.lower() or "fortios" in original_prompt.lower()))):
+        # Them ctx FGT cho debug
+        fortigate_context_section_str = f"""
+**Thông tin ngữ cảnh FortiGate tại thời điểm trước khi chạy lệnh gây lỗi (được trích xuất tự động để Gemini tham khảo):**
+```text
+{fortigate_context_data[:15000]}
+```
+""" # Gioi han do dai context
+
     return prompt_template.format(
         language_name=language_name,
         code_block_tag=code_block_tag,
         processed_original_prompt=processed_original_prompt,
         failed_code=failed_code,
         processed_stdout=processed_stdout,
-        processed_stderr=processed_stderr
+        processed_stderr=processed_stderr,
+        fortigate_context_section=fortigate_context_section_str # Placeholder moi
     ).strip()
 
 # Ham tao prompt yeu cau Gemini giai thich
@@ -166,7 +189,7 @@ def create_explain_prompt(content_to_explain, context, language=None):
     except json.JSONDecodeError:
          content_to_explain_formatted = str(content_to_explain)
 
-    final_prompt_instruction = prompt_instruction_base 
+    final_prompt_instruction = prompt_instruction_base
 
     if context == 'code':
         context_description = f"Đây là một đoạn mã **{language_name}**:\n```{code_block_tag}\n{content_to_explain_formatted}\n```"
@@ -195,15 +218,16 @@ def create_explain_prompt(content_to_explain, context, language=None):
     elif context == 'installation_result':
         context_description = f"Đây là kết quả sau khi cài đặt một package Python:\n```json\n{content_to_explain_formatted}\n```"
         final_prompt_instruction = "Phân tích kết quả cài đặt package này. Cho biết việc cài đặt thành công hay thất bại, và giải thích ngắn gọn output/error từ pip. Trả lời bằng tiếng Việt, sử dụng Markdown. Bắt đầu trực tiếp bằng nội dung giải thích."
-    else: 
+    else:
          context_description = f"Nội dung cần giải thích:\n```\n{content_to_explain_formatted}\n```"
 
     prompt_template = load_prompt_template("explain_content_prompt.txt")
     if not prompt_template:
         return "Lỗi: Không thể tải template prompt để giải thích."
-        
+
     return prompt_template.format(
         prompt_header=prompt_header,
         context_description=context_description,
         prompt_instruction=f"\n\n**Yêu cầu:** {final_prompt_instruction}"
     ).strip()
+
