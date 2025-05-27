@@ -16,21 +16,61 @@ from .gemini_utils import generate_response_from_gemini
 from .execution_utils import (
     extract_code_block, execute_fortigate_commands,
     execute_local_script, fetch_and_save_fortigate_context
-    # DEFAULT_FORTIGATE_CONTEXT_COMMANDS # Ko can import truc tiep o day nua
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
+
+def _normalize_model_config(raw_config: dict) -> dict:
+    """
+    Chuan hoa model_cfg tu FE (camelCase) -> snake_case cho BE.
+    Dam bao kieu so dung.
+    """
+    if not isinstance(raw_config, dict):
+        return {} # Tra dict rong de gemini_utils dung default
+
+    normalized = {}
+
+    # Model name
+    normalized['model_name'] = raw_config.get('modelName', raw_config.get('model_name')) # Lay ca 2 case
+
+    # Temperature
+    temp = raw_config.get('temperature')
+    if temp is not None:
+        try: normalized['temperature'] = float(temp)
+        except (ValueError, TypeError): pass # Bo qua neu ko parse dc
+
+    # Top P
+    top_p_val = raw_config.get('topP', raw_config.get('top_p'))
+    if top_p_val is not None:
+        try: normalized['top_p'] = float(top_p_val)
+        except (ValueError, TypeError): pass
+
+    # Top K
+    top_k_val = raw_config.get('topK', raw_config.get('top_k'))
+    if top_k_val is not None:
+        try: normalized['top_k'] = int(top_k_val)
+        except (ValueError, TypeError): pass
+
+    # Safety Setting
+    normalized['safety_setting'] = raw_config.get('safetySetting', raw_config.get('safety_setting'))
+
+    # API Key (thuong da la snake_case tu FE khi truyen qua body)
+    normalized['api_key'] = raw_config.get('api_key')
+
+    # Loai bo key None de .get(key, default) cua gemini_utils hdong dung
+    return {k: v for k, v in normalized.items() if v is not None}
+
 
 @api_bp.route('/generate', methods=['POST'])
 def handle_generate():
     logger = current_app.logger
     data = request.get_json()
     user_input = data.get('prompt')
-    model_config = data.get('model_config', {})
+    raw_model_config_from_request = data.get('model_config', {})
+    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
     target_os_input = data.get('target_os', 'auto')
     file_type_input = data.get('file_type', 'py')
     fortigate_config_from_request = data.get('fortigate_config')
-    # Nhan ds lenh ctx FGT da chon tu request
     fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
 
@@ -67,7 +107,7 @@ def handle_generate():
                 logger.info("Generate FGT: Dang lay thong tin ngu canh...")
                 fortigate_context_str = fetch_and_save_fortigate_context(
                     fortigate_config_from_request,
-                    commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
+                    commands_to_fetch=fortigate_selected_commands
                 )
                 logger.info("Generate FGT: Da lay xong thong tin ngu canh FortiGate.")
             except Exception as e:
@@ -75,7 +115,7 @@ def handle_generate():
                 fortigate_context_str = f"Lưu ý: Xảy ra lỗi khi cố gắng lấy thông tin ngữ cảnh từ FortiGate: {str(e)}"
 
     full_prompt = create_prompt(user_input, backend_os_name, target_os_name, file_type_input, fortigate_context_data=fortigate_context_str)
-    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=False)
+    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=False) # Truyen model_config da chuan hoa
 
     logger.info("-" * 20 + " RAW GEMINI RESPONSE (Generate) " + "-" * 20)
     logger.info(raw_response[:1000])
@@ -116,7 +156,8 @@ def handle_review():
     logger = current_app.logger
     data = request.get_json()
     code_to_review = data.get('code')
-    model_config = data.get('model_config', {})
+    raw_model_config_from_request = data.get('model_config', {})
+    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
     file_type = data.get('file_type', 'py')
 
     if not code_to_review:
@@ -126,7 +167,7 @@ def handle_review():
     if not language_extension: language_extension = 'py'
 
     full_prompt = create_review_prompt(code_to_review, language_extension)
-    review_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
+    review_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
 
     if review_text and not review_text.startswith("Lỗi"):
         return jsonify({"review": review_text})
@@ -195,10 +236,10 @@ def handle_debug():
     failed_code = data.get('code')
     stdout = data.get('stdout', '')
     stderr = data.get('stderr', '')
-    model_config = data.get('model_config', {})
+    raw_model_config_from_request = data.get('model_config', {})
+    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
     file_type = data.get('file_type', 'py')
-    fortigate_config_for_context = data.get('fortigate_config_for_context') # Day la chi tiet knoi FGT
-    # Nhan ds lenh ctx FGT da chon tu request
+    fortigate_config_for_context = data.get('fortigate_config_for_context')
     fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
 
@@ -225,7 +266,7 @@ def handle_debug():
                 logger.info("Debug FGT: Dang lay thong tin ngu canh...")
                 fortigate_context_str_debug = fetch_and_save_fortigate_context(
                     fortigate_config_for_context,
-                    commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
+                    commands_to_fetch=fortigate_selected_commands
                 )
                 logger.info("Debug FGT: Da lay xong thong tin ngu canh FortiGate cho debug.")
             except Exception as e:
@@ -233,7 +274,7 @@ def handle_debug():
                 fortigate_context_str_debug = f"Lưu ý: Xảy ra lỗi khi cố gắng lấy thông tin ngữ cảnh từ FortiGate cho debug: {str(e)}"
 
     full_prompt = create_debug_prompt(original_prompt, failed_code, stdout, stderr, language_extension, fortigate_context_data=fortigate_context_str_debug)
-    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
+    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
 
     if raw_response and not raw_response.startswith("Lỗi"):
         explanation_part = raw_response
@@ -315,7 +356,7 @@ def handle_install_package():
     logger.info(f"--- Chuan bi cai dat package: {package_name} ---")
     try:
         pip_command_parts = [sys.executable, '-m', 'pip', 'install'] + shlex.split(package_name)
-        command = [part for part in pip_command_parts if part]
+        command = [part for part in pip_command_parts if part] # Remove empty parts
     except Exception as parse_err:
         logger.error(f"Ko the phan tich ten package: {package_name} - {parse_err}")
         return jsonify({"success": False, "error": f"Tên package không hợp lệ: {package_name}"}), 400
@@ -357,7 +398,8 @@ def handle_explain():
     data = request.get_json()
     content_to_explain = data.get('content')
     context = data.get('context', 'unknown')
-    model_config = data.get('model_config', {})
+    raw_model_config_from_request = data.get('model_config', {})
+    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
     file_type = data.get('file_type')
 
     if not content_to_explain:
@@ -373,7 +415,7 @@ def handle_explain():
     language_for_prompt = file_type if explain_context == 'code' else None
 
     full_prompt = create_explain_prompt(content_to_explain, explain_context, language=language_for_prompt)
-    explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
+    explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
 
     if explanation_text and not explanation_text.startswith("Lỗi"):
         return jsonify({"explanation": explanation_text})
@@ -391,9 +433,9 @@ def handle_fortigate_chat():
     data = request.get_json()
     user_prompt = data.get('prompt')
     fortigate_config_from_request = data.get('fortigate_config')
-    model_config_params = data.get('model_config', {})
+    raw_model_config_from_request = data.get('model_config', {})
+    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
     conversation_history_context_str = data.get('conversation_history_for_chat_context', "(Không có lịch sử FortiOS)")
-    # Nhan ds lenh ctx FGT da chon tu request
     fortigate_selected_commands = data.get('fortigate_selected_context_commands')
 
     if not user_prompt:
@@ -407,7 +449,7 @@ def handle_fortigate_chat():
             logger.info("FGT Chat: Lay ctx...")
             fortigate_context_str = fetch_and_save_fortigate_context(
                 fortigate_config_from_request,
-                commands_to_fetch=fortigate_selected_commands # Truyen ds lenh da chon
+                commands_to_fetch=fortigate_selected_commands
             )
             logger.info("FGT Chat: Da lay xong ctx.")
         except Exception as e:
@@ -417,7 +459,7 @@ def handle_fortigate_chat():
         logger.warning("FGT Chat: Thieu info ket noi (IP/Host, User) de lay ctx.")
 
     HISTORY_LIMIT = 10000
-    FGT_CTX_LIMIT = 8000 # Gioi han do dai cua ctx FGT
+    FGT_CTX_LIMIT = 8000 # Gioi han do dai ctx FGT
 
     chat_prompt_for_gemini = f"""Bạn là một trợ lý AI chuyên gia về FortiGate.
 Người dùng hiện tại đang hỏi: "{user_prompt}"
@@ -439,7 +481,7 @@ Nếu người dùng chỉ hỏi thông tin về mã đã có hoặc lỗi đã 
 Sử dụng Markdown cho câu trả lời của bạn.
 Bắt đầu trực tiếp bằng câu trả lời, không thêm lời dẫn.
 """
-    raw_response = generate_response_from_gemini(chat_prompt_for_gemini, model_config_params, is_for_review_or_debug=True)
+    raw_response = generate_response_from_gemini(chat_prompt_for_gemini, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
 
     if raw_response and not raw_response.startswith("Lỗi"):
         cleaned_response = re.sub(r"^\s*\[(thinking|internal|process\w*)\].*$\n?", "", raw_response, flags=re.MULTILINE).strip()

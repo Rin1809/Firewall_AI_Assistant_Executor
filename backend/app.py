@@ -33,19 +33,35 @@ app.config['SAFETY_SETTINGS_MAP'] = {
 from .routes import api_bp
 app.register_blueprint(api_bp)
 
+# --- Cau hinh Logging ---
+# Chi cau hinh file logger khi KHONG o che do debug (de tranh loi voi reloader)
+if not app.debug or os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+    if not os.path.exists('../logs'): # Tao thu muc logs o goc du an
+        os.makedirs('../logs', exist_ok=True)
+    # Duong dan file log tuyet doi den thu muc logs o goc
+    log_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'logs', 'gemini_executor.log'))
+
+    file_handler = RotatingFileHandler(log_file_path, maxBytes=102400, backupCount=10, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+    ))
+    # Muc log cua handler co the khac muc log cua app
+    # VD: app.logger.setLevel(logging.DEBUG) nhung handler chi ghi INFO tro len
+    file_handler.setLevel(logging.INFO)
+    app.logger.addHandler(file_handler)
+    # Dat muc log cho app logger sau khi them handler
+    if not app.logger.level or app.logger.level > logging.INFO:
+        app.logger.setLevel(logging.INFO)
+else:
+    # Neu dang debug mode va CHUA phai la main process cua reloader,
+    # co the khong can handler file, hoac su dung handler khac
+    # Trong truong hop nay, de don gian, chi log ra console (mac dinh cua Flask)
+    app.logger.setLevel(logging.DEBUG) # Log DEBUG ra console khi debug
+
 # --- Main Execution ---
 if __name__ == '__main__':
-    if not app.debug:
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        file_handler = RotatingFileHandler('logs/gemini_executor.log', maxBytes=102400, backupCount=10)
-        file_handler.setFormatter(logging.Formatter(
-            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
-        ))
-        file_handler.setLevel(logging.INFO)
-        app.logger.addHandler(file_handler)
-        app.logger.setLevel(logging.INFO)
-
+    # Thong bao khoi dong duoc log truoc khi app.run
+    # De dam bao no duoc ghi boi logger da cau hinh (neu co)
     app.logger.info('Backend Gemini UI Executor dang khoi dong...')
     print("Backend đang chạy tại http://localhost:5001")
 
@@ -64,5 +80,7 @@ if __name__ == '__main__':
             warn_msg = "Ko the check quyen admin khi khoi dong."
             app.logger.warning(warn_msg)
             print(f"[CẢNH BÁO] {warn_msg}")
-
+    # Tham so use_reloader=False khi debug tren Windows co the giup tranh loi permission voi file log
+    # Tuy nhien, dieu nay se mat tinh nang auto-reload.
+    # Cach tot hon la dieu kien WERKZEUG_RUN_MAIN nhu tren.
     app.run(debug=True, port=5001)
