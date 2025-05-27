@@ -32,13 +32,26 @@
 }
 
 .input-suggestion-chips {
+    /* Base styles for the container */
     display: flex;
     gap: var(--spacing-unit);
-    margin-bottom: calc(var(--spacing-unit) * 1);
     padding-left: calc(var(--spacing-unit) * 0.5);
-    padding-top: calc(var(--spacing-unit) * 0.25); /* Them chut padding top */
     flex-wrap: wrap;
     align-self: flex-start; /* Can trai chip */
+
+    /* Animation styles for appearing/disappearing */
+    overflow: hidden;
+    max-height: 0; /* Start collapsed */
+    opacity: 0;    /* Start transparent */
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transition:
+        max-height 0.3s ease-out,
+        opacity 0.2s ease-out,
+        margin-bottom 0.3s ease-out,
+        padding-top 0.3s ease-out,
+        padding-bottom 0.3s ease-out;
 }
 
 .suggestion-chip {
@@ -66,7 +79,7 @@
 .suggestion-chip.interactive-fgt-chip {
     color: #686868;
     border-color: #2d2d2d;
-    background-color: var(--bg-tertiary); 
+    background-color: var(--bg-tertiary);
 }
 .suggestion-chip.interactive-fgt-chip:hover:not(:disabled) {
     background-color: #474747c0; /* Mau nen khi hover */
@@ -82,6 +95,15 @@
 .suggestion-chip.interactive-fgt-chip.active:hover:not(:disabled) {
     background-color: #7779ff63; /* Mau nen sang hon khi active va hover */
     color: var(--bg-primary);
+}
+
+/* Styles for when the chip container is visible */
+.input-suggestion-chips.visible {
+    max-height: 100px; /* Adjust if more chips/rows are possible */
+    opacity: 1;
+    margin-bottom: calc(var(--spacing-unit) * 1);
+    padding-top: calc(var(--spacing-unit) * 0.25);
+    padding-bottom: calc(var(--spacing-unit) * 0.25); /* Optional: if you want padding when visible */
 }
 
 .main-input-wrapper { /* Wrapper cho textarea va nut send */

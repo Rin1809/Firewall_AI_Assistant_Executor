@@ -54,19 +54,21 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <div className="user-input-container">
       <div className="user-input-area">
-        {targetOs === 'fortios' && (
-          <div className="input-suggestion-chips">
-            <button
-              onClick={onToggleFortiGateInteractiveMode} // Bat/tat che do
-              disabled={isLoading} // Disable khi dang loading bat ky
-              className={`suggestion-chip interactive-fgt-chip ${isFortiGateInteractiveMode ? 'active' : ''}`}
-              title={isFortiGateInteractiveMode ? "Tắt chế độ tạo lệnh FortiGate (Chuyển sang Chat)" : "Bật chế độ tạo lệnh FortiGate"}
-            >
-              <FiTool size="0.9em" style={{ marginRight: '6px' }} />
-              Tương tác {isFortiGateInteractiveMode ? '(ON)' : '(OFF)'}
-            </button>
-          </div>
-        )}
+        {/* Container for suggestion chips, luon render de animation */}
+        <div className={`input-suggestion-chips ${targetOs === 'fortios' ? 'visible' : ''}`}>
+          {/* Nut chi render khi targetOs la 'fortios' */}
+          {targetOs === 'fortios' && (
+              <button
+                onClick={onToggleFortiGateInteractiveMode}
+                disabled={isLoading}
+                className={`suggestion-chip interactive-fgt-chip ${isFortiGateInteractiveMode ? 'active' : ''}`}
+                title={isFortiGateInteractiveMode ? "Tắt chế độ tạo lệnh FortiGate (Chuyển sang Chat)" : "Bật chế độ tạo lệnh FortiGate"}
+              >
+                <FiTool size="0.9em" style={{ marginRight: '6px' }} />
+                Tương tác {isFortiGateInteractiveMode ? '(ON)' : '(OFF)'}
+              </button>
+          )}
+        </div>
         <div className="main-input-wrapper">
           <textarea
             ref={textareaRef}

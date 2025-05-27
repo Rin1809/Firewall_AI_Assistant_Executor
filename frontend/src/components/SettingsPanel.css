@@ -62,7 +62,7 @@
 .settings-section .slider-container,
 .settings-section .api-key-actions,
 .settings-section .admin-checkbox-container,
-.settings-section.fortigate-context-commands-section .command-checkbox-list /* Them selector moi */
+.settings-section.fortigate-context-commands-section .command-checkbox-list
 {
   opacity: 0; /* Trang thai ban dau: an */
   transform: translateY(5px); /* Trang thai ban dau: hoi dich xuong nhe */
@@ -80,7 +80,7 @@
 .sidebar-container.open .settings-section .slider-container,
 .sidebar-container.open .settings-section .api-key-actions,
 .sidebar-container.open .settings-section .admin-checkbox-container,
-.sidebar-container.open .settings-section.fortigate-context-commands-section .command-checkbox-list /* Them selector moi */
+.sidebar-container.open .settings-section.fortigate-context-commands-section .command-checkbox-list
 {
   opacity: 1; /* Hien ro */
   transform: translateY(0); /* Ve vi tri goc */
@@ -346,11 +346,31 @@
      margin-top: 0;
  }
 
+/* --- Wrapper for FortiGate specific sections for animation --- */
+.fortigate-animation-wrapper {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  /* No explicit margins/paddings/borders here; child .settings-section handles its own when visible */
+  transition:
+    max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.3s ease-in-out 0.05s;
+  /* This wrapper will also get the `style={getSectionStyle(index)}` for staggered sidebar open animation */
+}
+
+.fortigate-animation-wrapper.expanded {
+  max-height: 1000px; /* Adjust if content can be very tall, ensures space for children */
+  opacity: 1;
+}
+
 /* --- FortiGate Connection & Context Commands Section (khi targetOs la 'fortios') --- */
 .fortigate-connection-section,
 .fortigate-context-commands-section {
-  padding-top: calc(var(--spacing-unit) * 1.5);
-  border-top: 1px solid var(--border-color);
+  /* These are .settings-section, they already have their own
+     padding-top and border-top styling.
+     The .fortigate-animation-wrapper controls their visibility.
+     No specific style overrides needed here unless to counteract something from the wrapper.
+  */
 }
 
 .fortigate-context-commands-section > label { /* Label chinh cua section */

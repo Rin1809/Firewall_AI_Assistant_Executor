@@ -30,7 +30,7 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   runAsAdmin, uiApiKey, useUiApiKey, onApplyUiApiKey, onUseEnvKey,
   targetOs, fileType, customFileName,
   fortiGateConfig,
-  fortiGateContextCommandsConfig, // Nhan prop moi
+  fortiGateContextCommandsConfig,
 }) => {
 
   const getSuggestedFileTypes = (os: TargetOS): { value: string; label: string }[] => {
@@ -49,15 +49,30 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const getSectionStyle = (index: number): CSSProperties => ({ '--section-index': index } as CSSProperties);
 
   // Ktra trang thai cua nut "Select All"
+  // Dam bao list luon la array
+  if (!fortiGateContextCommandsConfig || !Array.isArray(fortiGateContextCommandsConfig.list)) {
+    // Neu config hoac list ko khoi tao dung
+    // Co the return UI loading/default
+    console.warn("Cfg cmd context FGT chua khoi tao dung.");
+  }
   const allContextCommandsSelected = fortiGateContextCommandsConfig.list.every(cmd => fortiGateContextCommandsConfig.selected[cmd]);
   const someContextCommandsSelected = fortiGateContextCommandsConfig.list.some(cmd => fortiGateContextCommandsConfig.selected[cmd]);
 
+  // Dinh nghia index cho animation delay theo thu tu DOM
+  const modelSectionIndex = 0;
+  const apiKeySectionIndex = 1;
+  const paramsSectionIndex = 2;
+  const targetEnvSectionIndex = 3;
+  const fortigateConnectionSectionIndex = 4;
+  const fortigateContextCommandsSectionIndex = 5;
+  const advancedSettingsSectionIndex = 6;
 
   return (
     <div className="settings-panel">
       <div className="settings-content">
-        {/* Cau hinh Model (Index 0) */}
-        <div className="settings-section" style={getSectionStyle(0)}>
+
+        {/* Cau hinh Model */}
+        <div className="settings-section" style={getSectionStyle(modelSectionIndex)}>
           <label htmlFor="modelName">Model</label>
           <div className="model-select-group">
             <input type="text" id="modelName" name="modelName" value={modelConfig.modelName} onChange={onConfigChange} disabled={isDisabled} placeholder="VD: gemini-1.5-flash" className="model-input"/>
@@ -65,8 +80,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-        {/* API Key (Index 1) */}
-        <div className="settings-section api-key-section" style={getSectionStyle(1)}>
+        {/* API Key */}
+        <div className="settings-section api-key-section" style={getSectionStyle(apiKeySectionIndex)}>
             <label htmlFor="uiApiKey"><FiKey /> API Key (Tùy chọn)</label>
             <input type="password" id="uiApiKey" name="uiApiKey" value={uiApiKey} onChange={onConfigChange} disabled={isDisabled} placeholder="Nhập API Key thay cho .env" className="api-key-input" autoComplete="new-password"/>
             <div className="api-key-actions">
@@ -77,8 +92,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <p className="api-key-note">Key chỉ gửi tới backend cục bộ. Không lưu trữ.</p>
         </div>
 
-        {/* Tham so Sinh ma (Index 2) */}
-        <div className="settings-section parameter-section" style={getSectionStyle(2)}>
+        {/* Tham so Sinh ma */}
+        <div className="settings-section parameter-section" style={getSectionStyle(paramsSectionIndex)}>
           <label><FiSliders /> Tham số Sinh mã</label>
           <div className="settings-subsection">
               <label htmlFor="temperature">Temperature</label>
@@ -100,8 +115,8 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
           </div>
         </div>
 
-         {/* Moi truong Muc tieu (Index 3) */}
-         <div className="settings-section target-environment-section" style={getSectionStyle(3)}>
+         {/* Moi truong Muc tieu */}
+         <div className="settings-section target-environment-section" style={getSectionStyle(targetEnvSectionIndex)}>
            <h4><FiGlobe /> Môi trường Mục tiêu (Script/Lệnh)</h4>
            <label htmlFor="targetOs">Hệ điều hành / Thiết bị</label>
            <select id="targetOs" name="targetOs" value={targetOs} onChange={onConfigChange} disabled={isDisabled}>
@@ -123,79 +138,69 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             <p className="target-env-note">Áp dụng cho việc tạo và thực thi file script / lệnh CLI.</p>
          </div>
 
-        {/* Cai dat dac thu cho FortiGate - Hien thi co dieu kien (Index 4) */}
-        {targetOs === 'fortios' && (
-            <>
-                {/* Ket noi FortiGate */}
-                <div className="settings-section fortigate-connection-section" style={getSectionStyle(4)}>
-                    <label><FiLink /> Kết nối FortiGate</label>
-                    <div className="settings-subsection">
-                        <label htmlFor="fortiGateIpHost">IP/Hostname</label>
-                        <input type="text" id="fortiGateIpHost" name="ipHost" value={fortiGateConfig.ipHost} onChange={onConfigChange} placeholder="VD: 192.168.1.99" disabled={isDisabled} />
-                    </div>
-                    <div className="settings-subsection">
-                        <label htmlFor="fortiGatePortSsh">Port SSH</label>
-                        <input type="text" id="fortiGatePortSsh" name="portSsh" value={fortiGateConfig.portSsh} onChange={onConfigChange} placeholder="22" disabled={isDisabled} />
-                    </div>
-                    <div className="settings-subsection">
-                        <label htmlFor="fortiGateUsername">Username</label>
-                        <input type="text" id="fortiGateUsername" name="username" value={fortiGateConfig.username} onChange={onConfigChange} placeholder="admin" disabled={isDisabled} />
-                    </div>
-                    <div className="settings-subsection">
-                        <label htmlFor="fortiGatePassword">Password</label>
-                        <input type="password" id="fortiGatePassword" name="password" value={fortiGateConfig.password || ''} onChange={onConfigChange} placeholder="Nhập mật khẩu" disabled={isDisabled} autoComplete="new-password" />
-                    </div>
-                    <p className="target-env-note">Dùng để thực thi lệnh CLI và lấy ngữ cảnh.</p>
+        {/* Wrapper cho FortiGate Connection Settings */}
+        <div className={`fortigate-animation-wrapper ${targetOs === 'fortios' ? 'expanded' : ''}`} style={getSectionStyle(fortigateConnectionSectionIndex)}>
+            <div className="settings-section fortigate-connection-section">
+                <label><FiLink /> Kết nối FortiGate</label>
+                <div className="settings-subsection">
+                    <label htmlFor="fortiGateIpHost">IP/Hostname</label>
+                    <input type="text" id="fortiGateIpHost" name="ipHost" value={fortiGateConfig.ipHost} onChange={onConfigChange} placeholder="VD: 192.168.1.99" disabled={isDisabled} />
                 </div>
-
-                {/* Lenh lay Ngu canh FortiGate (Index 5 - neu FortiOS duoc chon) */}
-                <div className="settings-section fortigate-context-commands-section" style={getSectionStyle(targetOs === 'fortios' ? 5 : 4)}>
-                    <label><FiList /> Lệnh lấy Ngữ cảnh FortiGate</label>
-                    <div className="admin-checkbox-container select-all-fgt-ctx">
-                         <input
-                            type="checkbox"
-                            id="fgtCtxCmd_selectAll_id" // Them id de label for hoat dong
-                            name="fgtCtxCmd_selectAll" // Ten de App.tsx xu ly
-                            checked={allContextCommandsSelected}
-                            ref={input => { // Cho trang thai indeterminate
-                                if (input) input.indeterminate = someContextCommandsSelected && !allContextCommandsSelected;
-                            }}
-                            onChange={onConfigChange}
-                            disabled={isDisabled}
-                            className="admin-checkbox"
-                        />
-                        <label htmlFor="fgtCtxCmd_selectAll_id" className="admin-checkbox-label" style={{ fontWeight: 600 }}>
-                            {allContextCommandsSelected ? <FiCheckSquare style={{color: 'var(--accent-primary)'}}/> : <FiSquare />}
-                            Chọn Tất cả / Bỏ chọn Tất cả
-                        </label>
-                    </div>
-                    <div className="command-checkbox-list">
-                        {fortiGateContextCommandsConfig.list.map((cmd, index) => (
-                            <div key={cmd + index} className="command-checkbox-item admin-checkbox-container">
-                                <input
-                                    type="checkbox"
-                                    id={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} // Them id
-                                    name={`fgtCtxCmd_${cmd}`} // Ten de App.tsx xu ly
-                                    checked={!!fortiGateContextCommandsConfig.selected[cmd]}
-                                    onChange={onConfigChange}
-                                    disabled={isDisabled}
-                                    className="admin-checkbox"
-                                />
-                                <label htmlFor={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} className="admin-checkbox-label command-label">
-                                    {fortiGateContextCommandsConfig.selected[cmd] ? <FiCheckSquare style={{color: 'var(--accent-primary)', fontSize: '0.9em'}}/> : <FiSquare style={{fontSize: '0.9em'}} />}
-                                    <code>{cmd}</code>
-                                </label>
-                            </div>
-                        ))}
-                    </div>
-                     <p className="target-env-note">Các lệnh này sẽ được chạy để lấy thông tin ngữ cảnh khi bạn tương tác với AI về FortiGate.</p>
+                <div className="settings-subsection">
+                    <label htmlFor="fortiGatePortSsh">Port SSH</label>
+                    <input type="text" id="fortiGatePortSsh" name="portSsh" value={fortiGateConfig.portSsh} onChange={onConfigChange} placeholder="22" disabled={isDisabled} />
                 </div>
-            </>
-        )}
+                <div className="settings-subsection">
+                    <label htmlFor="fortiGateUsername">Username</label>
+                    <input type="text" id="fortiGateUsername" name="username" value={fortiGateConfig.username} onChange={onConfigChange} placeholder="admin" disabled={isDisabled} />
+                </div>
+                <div className="settings-subsection">
+                    <label htmlFor="fortiGatePassword">Password</label>
+                    <input type="password" id="fortiGatePassword" name="password" value={fortiGateConfig.password || ''} onChange={onConfigChange} placeholder="Nhập mật khẩu" disabled={isDisabled} autoComplete="new-password" />
+                </div>
+                <p className="target-env-note">Dùng để thực thi lệnh CLI và lấy ngữ cảnh.</p>
+            </div>
+        </div>
 
+        {/* Wrapper for FortiGate Context Commands Settings */}
+        <div className={`fortigate-animation-wrapper ${targetOs === 'fortios' ? 'expanded' : ''}`} style={getSectionStyle(fortigateContextCommandsSectionIndex)}>
+            <div className="settings-section fortigate-context-commands-section">
+                <label><FiList /> Lệnh lấy Ngữ cảnh FortiGate</label>
+                <div className="admin-checkbox-container select-all-fgt-ctx">
+                     <input
+                        type="checkbox"
+                        id="fgtCtxCmd_selectAll_id"
+                        name="fgtCtxCmd_selectAll"
+                        checked={allContextCommandsSelected}
+                        ref={input => {
+                            if (input) input.indeterminate = someContextCommandsSelected && !allContextCommandsSelected;
+                        }}
+                        onChange={onConfigChange}
+                        disabled={isDisabled}
+                        className="admin-checkbox"
+                    />
+                    <label htmlFor="fgtCtxCmd_selectAll_id" className="admin-checkbox-label" style={{ fontWeight: 600 }}>
+                        {allContextCommandsSelected ? <FiCheckSquare style={{color: 'var(--accent-primary)'}}/> : <FiSquare />}
+                        Chọn Tất cả / Bỏ chọn Tất cả
+                    </label>
+                </div>
+                <div className="command-checkbox-list">
+                    {fortiGateContextCommandsConfig.list.map((cmd, index) => (
+                        <div key={cmd + index} className="command-checkbox-item admin-checkbox-container">
+                            <input type="checkbox" id={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} name={`fgtCtxCmd_${cmd}`} checked={!!fortiGateContextCommandsConfig.selected[cmd]} onChange={onConfigChange} disabled={isDisabled} className="admin-checkbox"/>
+                            <label htmlFor={`fgtCtxCmd_id_${cmd.replace(/\s+/g, '-')}-${index}`} className="admin-checkbox-label command-label">
+                                {fortiGateContextCommandsConfig.selected[cmd] ? <FiCheckSquare style={{color: 'var(--accent-primary)', fontSize: '0.9em'}}/> : <FiSquare style={{fontSize: '0.9em'}} />}
+                                <code>{cmd}</code>
+                            </label>
+                        </div>
+                    ))}
+                </div>
+                 <p className="target-env-note">Các lệnh này sẽ được chạy để lấy thông tin ngữ cảnh khi bạn tương tác với AI về FortiGate.</p>
+            </div>
+        </div>
 
-        {/* Cai dat Khac (Index phu thuoc vao lua chon FortiOS) */}
-        <div className="settings-section advanced-settings-section" style={getSectionStyle(targetOs === 'fortios' ? 6 : 4)}>
+        {/* Cai dat Khac */}
+        <div className="settings-section advanced-settings-section" style={getSectionStyle(advancedSettingsSectionIndex)}>
            <h4><FiSettings/> Cài đặt Khác</h4>
            <label htmlFor="safetySetting"><FiShield /> Lọc Nội dung An toàn</label>
            <select id="safetySetting" name="safetySetting" value={modelConfig.safetySetting} onChange={onConfigChange} disabled={isDisabled} >
