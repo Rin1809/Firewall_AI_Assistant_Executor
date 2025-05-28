@@ -132,7 +132,10 @@ def handle_generate():
             fortigate_context_data=initial_fortigate_context_str
         )
         if "get_fortigate_data" not in full_prompt_for_gemini:
+             # Them huong dan neu tool get_fortigate_data chua co trong prompt mac dinh
              full_prompt_for_gemini += "\n\nQuan trọng: Nếu bạn cần thêm thông tin cấu hình hiện tại của FortiGate để hoàn thành yêu cầu, hãy sử dụng tool `get_fortigate_data` để chạy các lệnh 'show', 'get', hoặc 'diagnose' cần thiết. Chỉ sử dụng tool này cho các lệnh không thay đổi cấu hình."
+        # Huong dan AI tu retry khi gap loi tool (nghe loi ma thu lai ngay)
+        full_prompt_for_gemini += "\n**QUAN TRỌNG:** Nếu một lệnh thực thi qua tool `get_fortigate_data` trả về lỗi, bạn phải **NGAY LẬP TỨC** phân tích lỗi đó và thử lại tool `get_fortigate_data` với lệnh đã sửa đổi hoặc điều chỉnh cách tiếp cận. **KHÔNG** giải thích lỗi hoặc thông báo kế hoạch của bạn cho đến khi bạn đã thử lại tool và có kết quả mới. Mục tiêu là hoàn thành yêu cầu bằng cách thực thi lệnh tool thành công."
 
         genai_api_key_to_use = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
         if not genai_api_key_to_use:
@@ -190,7 +193,7 @@ def handle_generate():
         model_for_fc = GenerativeModel(gemini_model_name, tools=AVAILABLE_TOOLS)
         chat_session = model_for_fc.start_chat(history=[])
         thoughts_for_ui = []
-        MAX_FUNCTION_CALLS = 5
+        MAX_FUNCTION_CALLS = 500
         num_calls = 0
         current_content_for_send_message: str | list[dict] = full_prompt_for_gemini
 
@@ -233,7 +236,8 @@ def handle_generate():
                         logger.info(f"Tool '{tool_name}': Executing command '{fgt_command_to_run}'")
                         exec_result = execute_fortigate_commands(fgt_command_to_run, fortigate_config_from_request)
                         if exec_result["error"]:
-                            tool_response_text = f"Lỗi khi chạy lệnh '{fgt_command_to_run}': {exec_result['error']}. Output (nếu có): {exec_result['output']}"
+                            # Dinh dang ro rang hon de AI phan tich loi
+                            tool_response_text = f"[LỖI THỰC THI FORTIGATE]: Lệnh '{fgt_command_to_run}' thất bại. Chi tiết: {exec_result['error']}. Output: {exec_result['output']}"
                             tool_error_flag = True
                         else:
                             tool_response_text = exec_result["output"] if exec_result["output"] else "(Lệnh không trả về output)"
@@ -319,7 +323,7 @@ def handle_generate():
 
         is_likely_raw_text = (generated_code == raw_response) and not generated_code.strip().startswith("```")
         if not generated_code.strip() or is_likely_raw_text:
-             logger.error(f"AI ko tra ve khoi ma hop le (Normal Gen). Phan hoi tho: {raw_response[:200]}...")
+             logger.error(f"AI ko tra ve khoi ma hop lệ (Normal Gen). Phan hoi tho: {raw_response[:200]}...")
              return jsonify({"error": f"AI không trả về khối mã hợp lệ. Phản hồi: '{raw_response[:50]}...'", "thoughts": []}), 500
 
         potentially_dangerous = ["rm ", "del ", "format ", "shutdown ", "reboot ", ":(){:|:&};:", "dd if=/dev/zero", "mkfs", "execute formatlogdisk"]
@@ -362,6 +366,7 @@ def handle_review():
         status_code = 400
     else:
         status_code = 500
+    # FIX: Doi toan tu JS '||' sang Python 'or'
     return jsonify({"error": review_text or "Lỗi không xác định khi đánh giá."}), status_code
 
 @api_bp.route('/execute', methods=['POST'])
@@ -599,6 +604,7 @@ def handle_explain():
     if explanation_text and ("Lỗi cấu hình" in explanation_text or "Lỗi: Phản hồi bị chặn" in explanation_text):
         status_code = 400
     else: status_code = 500
+    # FIX: Doi toan tu JS '||' sang Python 'or'
     return jsonify({"error": explanation_text or "Lỗi không xác định khi giải thích."}), status_code
 
 @api_bp.route('/fortigate_chat', methods=['POST'])
@@ -655,6 +661,9 @@ Lịch sử hội thoại gần đây (nếu có):
 
 Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
 """
+    # Huong dan AI tu retry khi gap loi tool trong chat mode (nghe loi ma thu lai ngay)
+    system_instruction_for_chat += "\n**QUAN TRỌNG:** Nếu một lệnh thực thi qua tool `get_fortigate_data` trả về lỗi, bạn phải **NGAY LẬP TỨC** phân tích lỗi đó và thử lại tool `get_fortigate_data` với lệnh đã sửa đổi hoặc điều chỉnh cách tiếp cận. **KHÔNG** giải thích lỗi hoặc thông báo kế hoạch của bạn cho đến khi bạn đã thử lại tool và có kết quả mới. Mục tiêu là hoàn thành yêu cầu bằng cách thực thi lệnh tool thành công hoặc cung cấp câu trả lời hữu ích dựa trên thông tin tool thu được."
+
 
     genai_api_key_to_use_chat = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
     if not genai_api_key_to_use_chat:
@@ -707,7 +716,7 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
     model_for_chat_fc = GenerativeModel(gemini_model_name_chat, tools=AVAILABLE_TOOLS)
     chat_session_fc = model_for_chat_fc.start_chat(history=[])
     thoughts_for_ui_chat = []
-    MAX_FC_CHAT = 3
+    MAX_FC_CHAT = 500
     num_calls_chat = 0
     current_content_for_send_message_chat: str | list[dict] = system_instruction_for_chat
 
@@ -754,7 +763,8 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
                     else:
                         exec_res_chat = execute_fortigate_commands(fgt_cmd_chat, fortigate_config_from_request)
                         if exec_res_chat["error"]:
-                            tool_response_text_chat = f"Lỗi khi chạy '{fgt_cmd_chat}': {exec_res_chat['error']}. Output: {exec_res_chat['output']}"
+                            # Dinh dang ro rang hon de AI phan tich loi
+                            tool_response_text_chat = f"[LỖI THỰC THI FORTIGATE]: Lệnh '{fgt_cmd_chat}' thất bại. Chi tiết: {exec_res_chat['error']}. Output: {exec_res_chat['output']}"
                             tool_error_flag_chat = True
                         else:
                             tool_response_text_chat = exec_res_chat["output"] if exec_res_chat["output"] else "(Lệnh không có output)"

@@ -43,10 +43,11 @@ const AiThinkingDisplay: React.FC<AiThinkingDisplayProps> = ({ thoughts, blockId
                         <div key={`${displayBlockId}-thought-${index}`} className={`thought-item thought-type-${thought.type} ${thought.is_error ? 'error' : ''}`}>
                             <div className="thought-header">
                                 {thought.type === 'function_call_request' && <FiTool className="thought-icon tool-request-icon" title="AI yêu cầu gọi tool"/>}
-                                {thought.type === 'function_call_result' && thought.is_error && <FiAlertCircle className="thought-icon tool-result-icon error" title="Kết quả tool (Lỗi)"/>}
+                                {thought.type === 'function_call_result' && thought.is_error && <FiAlertCircle className="thought-icon tool-result-icon error" title="Tool thất bại"/>} {/* Thay đổi title */}
                                 {thought.type === 'function_call_result' && !thought.is_error && <FiCheckCircle className="thought-icon tool-result-icon success" title="Kết quả tool (Thành công)"/>}
                                 <span className="thought-title">
-                                    {thought.type === 'function_call_request' ? `Gọi Tool: ${thought.tool_name}` : `Kết quả Tool: ${thought.tool_name}`}
+                                    {/* Thay đổi để hiển thị rõ ràng hơn trạng thái lỗi */}
+                                    {thought.type === 'function_call_request' ? `Gọi Tool: ${thought.tool_name}` : (thought.is_error ? `Kết quả Tool Thất Bại: ${thought.tool_name}` : `Kết quả Tool: ${thought.tool_name}`)}
                                 </span>
                                 <span className="thought-timestamp">{formatThoughtTimestamp(thought.timestamp)}</span>
                             </div>
