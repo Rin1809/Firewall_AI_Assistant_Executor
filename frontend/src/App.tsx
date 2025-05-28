@@ -1,4 +1,4 @@
-// Firewall AI Assistant  - Executor\frontend\src\App.tsx
+// Firewall AI Assistant  - Executor/frontend/src/App.tsx
 import React, { useState, ChangeEvent, useEffect, useCallback } from 'react';
 import CenterArea from './components/CenterArea';
 import Sidebar from './components/Sidebar';
@@ -171,16 +171,8 @@ function App() {
   const [backendLogs, setBackendLogs] = useState<string[]>(["Đang chờ log từ backend..."]);
   const [isLogViewerVisible, setIsLogViewerVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem(LOG_VIEWER_VISIBLE_KEY);
-    return saved ? JSON.parse(saved) : false; // Default to false
+    return saved ? JSON.parse(saved) : false; // Mac dinh an
   });
-
-  const toggleLogViewer = useCallback(() => {
-    setIsLogViewerVisible(prev => {
-        const newState = !prev;
-        localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(newState));
-        return newState;
-    });
-  }, []);
 
   const fetchBackendLogs = useCallback(async () => {
     try {
@@ -213,6 +205,34 @@ function App() {
     const intervalId = setInterval(fetchBackendLogs, 7000); 
     return () => clearInterval(intervalId);
   }, [fetchBackendLogs]);
+
+
+   const isBusyOverall = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
+
+  // Tu dong mo/dong log panel
+  useEffect(() => {
+    if (isBusyOverall) {
+      if (!isLogViewerVisible) { // Chi mo neu dang an
+        setIsLogViewerVisible(true);
+        localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(true));
+      }
+    } else {
+      // Khi khong busy, tu dong dong lai
+      if (isLogViewerVisible) { // Chi dong neu dang hien
+        setIsLogViewerVisible(false);
+        localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(false));
+      }
+    }
+  }, [isBusyOverall]); // Trigger khi isBusyOverall thay doi
+
+  // Van giu ham toggle thu cong
+  const toggleLogViewer = useCallback(() => {
+    setIsLogViewerVisible(prev => {
+        const newState = !prev;
+        localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(newState));
+        return newState;
+    });
+  }, []);
 
 
    useEffect(() => {
@@ -914,8 +934,6 @@ function App() {
   useEffect(() => {
     localStorage.setItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY, JSON.stringify(fortiGateContextCommands));
   }, [fortiGateContextCommands]);
-
-  const isBusyOverall = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
 
   return (
     <div className="main-container">
