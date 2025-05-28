@@ -15,33 +15,7 @@ import logging # Them logging neu current_app ko co san logger
 
 # Lenh lay ctx FortiGate
 DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
-    "get system status",
-    "get system performance status",
-    "show system interface",
-    "show firewall policy",
-    "show firewall address",
-    "show firewall vip",
-    "show firewall ippool",
-    "show firewall service custom",
-    "show firewall service group",
-    "get router info routing-table all",
-    "diagnose log display event --view-limit 20", # Sua lai, them dau phay
-    "get system dns",
-    "get system dhcp server",
-    "diagnose sys session list",
-    # -- 10 New commands (examples, replace as needed) --
-    "get system admin list",
-    "show vpn ssl settings",
-    "get vpn ipsec tunnel summary",
-    "show user local",
-    "show user group",
-    "get system ha status",
-    "diagnose hardware deviceinfo nic",
-    "get webfilter profile ",
-    "get application list",
-    "show log setting",
-    "show firewall policy"
-    #"diagnose debug report", # Lenh nay rat dai, can nhac
+
 ]
 
 # Ham trich xuat khoi ma

@@ -1,4 +1,4 @@
-/* frontend/src/components/CenterArea.css */
+/* Firewall AI Assistant  - Executor\frontend\src\components\CenterArea.css */
 
 /* Kế thừa biến từ App.css */
 
@@ -6,12 +6,11 @@
 .center-area-wrapper {
   display: flex;
   flex-direction: column;
-  flex: 1; /* Takes up remaining space from its parent (main-container) */
-  min-height: 0; /* VERY IMPORTANT: Allows this flex item to shrink smaller than its content, crucial for child scrolling */
+  flex: 1; 
+  min-height: 0; 
   background-color: var(--bg-primary);
   width: 100%;
-  /* max-width: 100%; REMOVE THIS if not strictly necessary, can sometimes conflict with flex behavior */
-  overflow: hidden; /* Parent should hide overflow, child will scroll */
+  overflow: hidden; 
   position: relative; 
 }
 
@@ -23,47 +22,103 @@
   padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 3);
   border-bottom: 1px solid #131314; 
   background-color: var(--bg-primary);
-  flex-shrink: 0; /* Top bar should not shrink */
+  flex-shrink: 0; 
+  gap: var(--spacing-unit); 
 }
 .top-bar h2 {
   color: var(--text-primary);
   font-size: 1.1rem;
   font-weight: 600;
   margin: 0;
+  margin-right: auto; 
 }
-.settings-trigger-button {
+.top-bar .icon-button { 
   color: var(--text-muted);
 }
-.settings-trigger-button:hover {
+.top-bar .icon-button:hover:not(:disabled) {
   color: var(--text-primary);
   background-color: var(--bg-secondary);
 }
+/* .settings-trigger-button is already styled */
+
 
 /* --- Interaction Container (Scrollable Area) --- */
 .interaction-container {
-    flex-grow: 1; /* Allow it to grow and take available space from center-area-wrapper */
-    flex-shrink: 1; /* Allow it to shrink if needed, though grow is more important here */
-    flex-basis: 0; /* Or auto. This combined with flex-grow: 1 makes it take remaining space */
-    
-    min-height: 0; /* CRUCIAL: This allows the container to be smaller than its content, which is necessary for overflow-y to work */
-    overflow-y: auto; /* This is the main scrollable area */
-    
-    padding: 0 calc(var(--spacing-unit) * 3); /* Keep horizontal padding */
-    /* Add some bottom padding to ensure the last item isn't flush against the UserInput */
-    padding-bottom: calc(var(--spacing-unit) * 2); 
-
+    flex-grow: 1; 
+    flex-shrink: 1; 
+    flex-basis: 0; 
+    min-height: 0; 
+    overflow-y: auto;
+    padding: 0 calc(var(--spacing-unit) * 3);
     display: flex;
     flex-direction: column;
-    gap: 0; /* Gap between interaction-rounds */
-    width: 100%; /* Ensure it spans the full width of its parent */
+    gap: 0; 
+    width: 100%;
 }
+
+/* --- Backend Log Viewer Container --- */
+.backend-log-viewer-container {
+  flex-shrink: 0; 
+  overflow: hidden; 
+  background-color: var(--bg-code); 
+  display: flex; 
+  flex-direction: column;
+  
+
+  width: 100%; 
+  max-width: var(--max-content-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: calc(var(--spacing-unit) * 3); 
+  padding-right: calc(var(--spacing-unit) * 3);
+  box-sizing: border-box; 
+
+  /* Transitions for the "growing out" effect */
+  max-height: 0;
+  opacity: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-top: 0px solid transparent; 
+  border-bottom: 0px solid transparent; /* Start with no bottom border too */
+  border-radius: 0; /* Start with no radius, will apply when visible */
+  margin-bottom: 0; /* No margin when hidden */
+
+  transition: 
+    max-height 0.3s ease-in-out,  /* Thời gian cho max-height */
+    opacity 0.2s ease-in-out 0.05s, /* Thời gian cho opacity, với delay 0.05s */
+    padding-top 0.3s ease-in-out, /* Thời gian cho padding-top */
+    padding-bottom 0.3s ease-in-out, /* Thời gian cho padding-bottom */
+    border-width 0.3s ease-in-out, /* Thời gian cho border-width */
+    border-radius 0.3s ease-in-out, /* Thời gian cho border-radius */
+    margin-bottom 0.3s ease-in-out; /* Thời gian cho margin-bottom */
+}
+
+.backend-log-viewer-container.visible {
+  max-height: 350px; 
+  opacity: 1;
+  padding-top: calc(var(--spacing-unit) * 1);   
+  padding-bottom: calc(var(--spacing-unit) * 1);
+  border-top: 1px solid var(--border-color-secondary); 
+  border-bottom: 1px solid var(--border-color-secondary); 
+
+  border-top-left-radius: var(--border-radius); 
+  border-top-right-radius: var(--border-radius);
+
+}
+
+/* Padding for internal content of log viewer */
+.backend-log-viewer-container > .log-header,
+.backend-log-viewer-container > .log-content {
+    padding-left: 0; 
+    padding-right: 0; 
+}
+
 
 /* --- Interaction Round Separator --- */
 .interaction-round {
   padding: calc(var(--spacing-unit) * 1) 0;
   border-bottom: 1px solid var(--border-color-secondary);
   margin: 0;
-  /* flex-shrink: 0; /* Ensure rounds don't shrink unexpectedly, though typically not needed here */
 }
 .interaction-round:last-child {
   border-bottom: none;
@@ -79,11 +134,11 @@
   display: flex;
   gap: var(--spacing-unit);
   align-items: flex-start;
-  max-width: var(--max-content-width); /* Giới hạn chiều rộng */
+  max-width: var(--max-content-width); 
   margin-left: auto;
   margin-right: auto;
   width: 100%;
-  padding: calc(var(--spacing-unit) * 1.5) 0; /* Padding trên dưới cho mỗi block */
+  padding: calc(var(--spacing-unit) * 1.5) 0; 
   position: relative;
 }
 
@@ -98,7 +153,7 @@ animation: slideInUpFade 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
 
 /* Block Avatar/Icon */
 .block-avatar {
-margin-top: calc(var(--spacing-unit) * 0.25); /* Align icon với dòng text đầu */
+margin-top: calc(var(--spacing-unit) * 0.25); 
 flex-shrink: 0;
 }
 .block-icon {
@@ -111,46 +166,47 @@ flex-shrink: 0;
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   font-size: 1.1rem;
-  color: var(--text-muted); /* Màu mặc định */
+  color: var(--text-muted); 
 }
 /* Icon styles per type */
 .block-icon.user-icon        { background-color: var(--accent-primary); color: var(--bg-primary); }
-.block-icon.ai-icon          { background-color: #9333ea; color: white; } /*  cho AI */
-.block-icon.fgt-cli-icon     { background-color: #f26522; color: white; } /* Fortinet orange */
-.block-icon.review-icon      { background-color: #34a853; color: white; } /*  cho review */
+.block-icon.ai-icon          { background-color: #9333ea; color: white; } 
+.block-icon.fgt-cli-icon     { background-color: #f26522; color: white; } 
+.block-icon.review-icon      { background-color: #34a853; color: white; } 
 .block-icon.execution-icon   { background-color: var(--bg-tertiary); }
 .block-icon.execution-icon.success svg { color: var(--success-color); }
 .block-icon.execution-icon.error   svg { color: var(--danger-color); }
-.block-icon.debug-icon       { background-color: #fbbc04; color: var(--bg-primary); } /* cho debug */
+.block-icon.debug-icon       { background-color: #fbbc04; color: var(--bg-primary); } 
 .block-icon.loading-icon     { background-color: var(--bg-tertiary); }
 .block-icon.error-icon       { background-color: var(--bg-tertiary); }
 .block-icon.error-icon svg   { color: var(--danger-color); }
 .block-icon.installation-icon { background-color: var(--bg-tertiary); }
 .block-icon.installation-icon.success svg { color: var(--success-color); }
 .block-icon.installation-icon.error svg { color: var(--danger-color); }
-.block-icon.info-icon        { background-color: var(--bg-tertiary); } /* explanation */
+.block-icon.info-icon        { background-color: var(--bg-tertiary); } 
 .block-icon.info-icon svg    { color: var(--info-color); }
+.block-icon.ai-thinking-icon { background-color: var(--bg-tertiary); } 
+.block-icon.ai-thinking-icon svg { color: var(--text-accent); }
 
 
 /* Block Main Content Area */
 .block-main-content {
-flex-grow: 1; /* Chiếm hết không gian còn lại */
-min-width: 0; /* Cho phép nội dung co lại */
+flex-grow: 1; 
+min-width: 0; 
 display: flex;
 flex-direction: column;
-gap: calc(var(--spacing-unit) * 1); /* Khoảng cách giữa header, content, actions */
+gap: calc(var(--spacing-unit) * 1); 
 }
 
 
 /* Container cho nội dung chính (code, markdown, output) */
 .block-content-area {
 border-radius: var(--border-radius);
-/* Padding/background/border sẽ được định nghĩa theo từng loại block */
 }
 .block-timestamp {
   font-size: 0.75rem;
   color: var(--text-muted);
-  margin-left: auto; /* Đẩy timestamp sang phải */
+  margin-left: auto; 
 }
 
 
@@ -173,8 +229,8 @@ border-radius: var(--border-radius);
   color: var(--text-primary);
   font-size: 0.95rem;
   line-height: 1.6;
-  white-space: pre-wrap; /* xuống dòng và khoảng trắng */
-  word-break: break-word; /* Ngắt từ nếu quá dài */
+  white-space: pre-wrap; 
+  word-break: break-word; 
 }
 
 /* --- Collapsed Section Block --- */
@@ -188,7 +244,6 @@ border: 1px solid var(--border-color);
 border-radius: var(--border-radius);
 cursor: pointer;
 transition: background-color 0.2s ease-out, border-color 0.2s ease-out;
-/* Căn giữa và giới hạn chiều rộng */
 max-width: var(--max-content-width);
 margin-left: auto;
 margin-right: auto;
@@ -218,7 +273,7 @@ color: var(--text-primary);
 font-size: 0.9rem;
 }
 .block-timestamp.collapsed-timestamp {
-margin-left: 0; /* Ghi đè margin auto */
+margin-left: 0; 
 }
 .collapsed-section-body {
 margin-top: 2px;
@@ -231,14 +286,14 @@ overflow: hidden;
 white-space: nowrap;
 text-overflow: ellipsis;
 margin: 0;
-padding-left: calc(1rem + var(--spacing-unit) * 0.75); /* Thụt lề */
+padding-left: calc(1rem + var(--spacing-unit) * 0.75); 
 }
 .collapsed-section-footer {
 display: flex;
 justify-content: space-between;
 align-items: center;
 margin-top: calc(var(--spacing-unit) * 0.75);
-padding-left: calc(1rem + var(--spacing-unit) * 0.75); /* Thụt lề */
+padding-left: calc(1rem + var(--spacing-unit) * 0.75); 
 }
 .expand-prompt-text {
 font-size: 0.8rem;
@@ -256,32 +311,29 @@ transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease-in-
 max-height: 0;
 opacity: 0;
 margin-top: 0;
-/* Căn giữa và giới hạn chiều rộng */
 max-width: var(--max-content-width);
 margin-left: auto;
 margin-right: auto;
 width: 100%;
-box-sizing: border-box; /* Đảm bảo padding không làm tăng kích thước */
+box-sizing: border-box; 
 }
 .collapsible-content.expanded {
-max-height: 5000px; /* Đủ lớn để chứa nhiều block */
+max-height: 5000px; 
 opacity: 1;
-margin-top: calc(var(--spacing-unit) * 1.5); /* Khoảng cách với block user */
+margin-top: calc(var(--spacing-unit) * 1.5); 
 
 }
-/* Nút thu gọn bên trong collapsible content */
 .collapse-round-wrapper {
 text-align: left;
 margin-top: calc(var(--spacing-unit) * 1.5);
 padding-top: calc(var(--spacing-unit) * 1.5);
 border-top: 1px solid var(--border-color-secondary);
-/* Căn giữa và giới hạn chiều rộng */
 max-width: var(--max-content-width);
 margin-left: auto;
 margin-right: auto;
 width: 100%;
-padding-left: calc(var(--spacing-unit) * 1); /* Thụt lề cho nút */
-padding-bottom: 0; /* vứt padding bottom */
+padding-left: calc(var(--spacing-unit) * 1); 
+padding-bottom: 0; 
 }
 .collapse-round-button {
 background: none;
@@ -308,10 +360,9 @@ font-size: 0.9rem;
 .block-type-ai-code .block-content-area {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  overflow: visible; /* Ensure inner scrollbar is not clipped */
+  overflow: visible; 
 }
 .code-block-container {
-/* Chỉ chứa header và code */
 }
 .code-block-header {
   display: flex;
@@ -324,7 +375,7 @@ font-size: 0.9rem;
   font-family: var(--code-font-family);
   border-bottom: 1px solid var(--border-color);
 }
-.code-block-header > div { /* Container cho các nút */
+.code-block-header > div { 
 display: flex;
 gap: calc(var(--spacing-unit) * 0.5);
 }
@@ -335,19 +386,18 @@ color: var(--text-muted);
 color: var(--text-primary);
 background-color: var(--bg-secondary);
 }
-/* Add max-height and scrolling to the <pre> tag inside AI code blocks */
 .block-type-ai-code .main-code-block pre {
-  margin: 0 !important; /* Ghi đè style mặc định của library */
-  border-radius: 0 !important; /* Header đã có bo tròn */
+  margin: 0 !important; 
+  border-radius: 0 !important; 
   font-size: 0.875rem !important;
   line-height: 1.45 !important;
-  overflow-x: auto !important; /* Allow horizontal scroll */
-  max-height: 500px; /* Limit height */
-  overflow-y: auto !important; /* Allow vertical scroll */
-  background-color: var(--bg-code) !important; /* Ensure background */
-  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5) !important; /* Ensure padding */
+  overflow-x: auto !important; 
+  max-height: 500px; 
+  overflow-y: auto !important; 
+  background-color: var(--bg-code) !important; 
+  padding: var(--spacing-unit) calc(var(--spacing-unit) * 1.5) !important; 
 }
-.block-type-ai-code .main-code-block code { /* Thẻ <code> bên trong <pre> */
+.block-type-ai-code .main-code-block code { 
 font-family: var(--code-font-family) !important;
 }
 
@@ -357,24 +407,20 @@ font-family: var(--code-font-family) !important;
 .block-type-explanation .block-content-area {
   background-color: #131314;
   border: 1px solid var(--border-color);
-  /* ADD scrolling properties HERE */
-  max-height: 500px; /* Limit height of the container */
-  overflow-y: auto;  /* Enable scrollbar on the container */
+  max-height: 500px; 
+  overflow-y: auto;  
 }
 
-/* ADD padding to the inner markdown container instead */
 .block-type-review .block-content-area .markdown-content,
 .block-type-explanation .block-content-area .markdown-content {
   padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
-  /* REMOVE scrolling properties from here */
 }
 
-/* Keep the other markdown content styles */
 .markdown-content {
 font-size: 0.9rem;
 line-height: 1.7;
 color: var(--text-secondary);
-word-wrap: break-word; /* Ngắt từ nếu cần */
+word-wrap: break-word; 
 }
 .markdown-content p { margin-bottom: var(--spacing-unit); }
 .markdown-content ul,
@@ -405,13 +451,12 @@ font-style: italic;
 }
 .markdown-content h4:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
 
-/* Code Block bên trong Markdown */
 .markdown-code-block {
 margin: var(--spacing-unit) 0;
 background-color: var(--bg-code);
 border: 1px solid var(--border-color);
 border-radius: var(--border-radius-small);
-overflow: hidden; /* Keep this for the inner code block's border-radius */
+overflow: hidden; 
 }
 .markdown-code-block .code-block-header {
 padding: calc(var(--spacing-unit) * 0.5) var(--spacing-unit) calc(var(--spacing-unit) * 0.5) calc(var(--spacing-unit) * 1);
@@ -424,14 +469,12 @@ border-radius: 0 !important;
 font-size: 0.8rem !important;
 background-color: transparent !important;
 line-height: 1.4 !important;
-/* Apply scrolling to inner code blocks too */
 max-height: 400px;
 overflow-y: auto !important;
 }
 .markdown-code-block .syntax-highlighter code {
 font-family: var(--code-font-family) !important;
 }
-/* Inline Code bên trong Markdown */
 .inline-code {
 background-color: var(--bg-tertiary);
 color: var(--text-accent);
@@ -445,7 +488,6 @@ white-space: nowrap;
 
 
 /* --- Execution Block --- */
-/* Keep Execution block styles as they were (using ExpandableOutput) */
 .block-type-execution .block-content-area {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -516,8 +558,8 @@ overflow-y: auto;
 }
 .output-section.stderr-section pre.output-pre {
 color: var(--danger-color);
-background-color: rgba(242, 139, 130, 0.05);
-border-color: rgba(242, 139, 130, 0.2);
+background-color: rgba(var(--danger-color-rgb), 0.05);
+border-color: rgba(var(--danger-color-rgb), 0.2);
 }
 .return-code {
 margin-top: var(--spacing-unit);
@@ -531,23 +573,19 @@ font-size: 0.8rem;
 .block-type-debug .block-content-area {
   background-color: #131314;
   border: 1px solid var(--border-color);
-  /* Apply max-height/overflow here for the whole debug area if needed, */
-  /* but usually scrolling within explanation/code is enough */
   padding: calc(var(--spacing-unit) * 1.5) calc(var(--spacing-unit) * 2);
 }
-/* Scrolling for the explanation part */
 .block-type-debug .block-content-area .markdown-content.explanation-content {
-  max-height: 400px; /* Limit height */
-  overflow-y: auto;  /* Enable scroll */
-  padding-right: calc(var(--spacing-unit) * 0.5); /* Space for scrollbar */
-  margin-bottom: calc(var(--spacing-unit) * 1.5); /* Keep margin */
+  max-height: 400px; 
+  overflow-y: auto;  
+  padding-right: calc(var(--spacing-unit) * 0.5); 
+  margin-bottom: calc(var(--spacing-unit) * 1.5); 
 }
-/* Scrolling for the corrected code part */
 .block-type-debug .code-block-container .main-code-block pre {
-  max-height: 400px; /* Limit height */
-  overflow-y: auto !important; /* Enable scroll */
-  background-color: var(--bg-code) !important; /* Ensure background */
-  padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit) !important; /* Ensure padding */
+  max-height: 400px; 
+  overflow-y: auto !important; 
+  background-color: var(--bg-code) !important; 
+  padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit) !important; 
 }
 .install-suggestion-area {
   margin-top: calc(var(--spacing-unit) * 1.5);
@@ -555,11 +593,11 @@ font-size: 0.8rem;
 }
 .install-package-button {
   color: var(--info-color);
-  border-color: rgba(var(--info-color), 0.3);
+  border-color: rgba(var(--info-color-rgb), 0.3);
 }
 .install-package-button:hover:not(:disabled) {
-  background-color: rgba(var(--info-color), 0.15);
-  border-color: rgba(var(--info-color), 0.5);
+  background-color: rgba(var(--info-color-rgb), 0.15);
+  border-color: rgba(var(--info-color-rgb), 0.5);
   color: #99d9f7;
 }
 .install-package-button svg { font-size: 1rem; }
@@ -582,11 +620,12 @@ margin-top: var(--spacing-unit);
 }
 .block-actions-area button.apply-code {
   color: #9e94d8;
-  border-color: rgba(var(--info-color), 0.3);
+  border-color: rgba(var(--accent-primary-rgb), 0.3); 
 }
 .block-actions-area button.apply-code:hover:not(:disabled) {
-  background-color: rgba(var(--info-color), 0.15);
-  border-color: rgba(var(--info-color), 0.5);
+  background-color: rgba(var(--accent-primary-rgb), 0.15);
+  border-color: rgba(var(--accent-primary-rgb), 0.5);
+  color: var(--accent-primary); 
 }
 
 
@@ -621,8 +660,8 @@ margin-top: var(--spacing-unit);
 }
 .installation-content .output-section.stderr-section pre.output-pre {
   color: var(--warning-color);
-  background-color: rgba(253, 214, 99, 0.05);
-  border-color: rgba(253, 214, 99, 0.2);
+  background-color: rgba(var(--warning-color-rgb), 0.05);
+  border-color: rgba(var(--warning-color-rgb), 0.2);
 }
 
 
@@ -675,21 +714,21 @@ color: var(--text-primary);
 .code-editor-textarea {
   width: 100%;
   min-height: 150px;
-  max-height: 500px; /* Giống max-height của SyntaxHighlighter */
-  overflow-y: auto; /* Scroll dọc */
-  overflow-x: auto; /* Scroll ngang nếu dòng quá dài */
-  background-color: var(--bg-code) !important; /* Ghi đè nếu có style khác */
+  max-height: 500px; 
+  overflow-y: auto; 
+  overflow-x: auto; 
+  background-color: var(--bg-code) !important; 
   color: var(--text-primary);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-small);
   padding: var(--spacing-unit);
-  font-family: var(--code-font-family) !important; /* Ghi đè */
-  font-size: 0.875rem !important; /* Ghi đè */
-  line-height: 1.45 !important; /* Ghi đè */
-  resize: vertical; /* Cho phép người dùng thay đổi chiều cao */
+  font-family: var(--code-font-family) !important; 
+  font-size: 0.875rem !important; 
+  line-height: 1.45 !important; 
+  resize: vertical; 
   tab-size: 4;
-  white-space: pre; /* Giữ nguyên khoảng trắng, tab và không tự xuống dòng */
-  word-break: normal; /* Để scroll ngang hoạt động */
+  white-space: pre; 
+  word-break: normal; 
   outline: none;
   box-shadow: none;
 }
@@ -702,7 +741,7 @@ color: var(--text-primary);
 .block-header.editing-header {
   display: flex;
   align-items: center;
-  padding: calc(var(--spacing-unit) * 0.75) 0; /* Chỉ padding trên dưới */
+  padding: calc(var(--spacing-unit) * 0.75) 0; 
   margin-bottom: calc(var(--spacing-unit) * 0.5);
   color: var(--text-accent);
   font-style: italic;
@@ -724,12 +763,6 @@ color: var(--text-primary);
 }
 
 /* --- Nút Save và Cancel Edit --- */
-:root {
-  /* Thêm biến màu nếu chưa có */
-  --success-color-rgb: 129, 201, 149; /* Từ #81c995 */
-  --danger-color-rgb: 242, 139, 130;   /* Từ #f28b82 */
-}
-
 .block-actions-area button.save-code {
   color: var(--success-color);
   border-color: rgba(var(--success-color-rgb), 0.4);
@@ -737,7 +770,7 @@ color: var(--text-primary);
 .block-actions-area button.save-code:hover:not(:disabled) {
   background-color: rgba(var(--success-color-rgb), 0.15);
   border-color: rgba(var(--success-color-rgb), 0.7);
-  color: #a1e0b2; /* Sáng hơn chút */
+  color: #a1e0b2; 
 }
 .block-actions-area button.save-code:disabled {
   color: var(--text-muted) !important;
@@ -750,15 +783,15 @@ color: var(--text-primary);
   border-color: var(--border-color);
 }
 .block-actions-area button.cancel-edit:hover:not(:disabled) {
-  background-color: var(--bg-tertiary);
+  background-color: var(--bg-tertiary); 
   color: var(--text-primary);
   border-color: #50555b;
 }
 
 
-.block-actions-area button.execute { color: var(--success-color); border-color: rgba(var(--success-color), 0.3); }
-.block-actions-area button.execute:hover:not(:disabled) { background-color: rgba(var(--success-color), 0.15); border-color: rgba(var(--success-color), 0.5); }
-.block-actions-area button.debug { color: var(--warning-color); border-color: rgba(var(--warning-color), 0.3); }
-.block-actions-area button.debug:hover:not(:disabled) { background-color: rgba(var(--warning-color), 0.15); border-color: rgba(var(--warning-color), 0.5); }
-.block-actions-area button.explain { color: var(--info-color); border-color: rgba(var(--info-color), 0.3); }
-.block-actions-area button.explain:hover:not(:disabled) { background-color: rgba(var(--info-color), 0.15); border-color: rgba(var(--info-color), 0.5); }
+.block-actions-area button.execute { color: var(--success-color); border-color: rgba(var(--success-color-rgb), 0.3); }
+.block-actions-area button.execute:hover:not(:disabled) { background-color: rgba(var(--success-color-rgb), 0.15); border-color: rgba(var(--success-color-rgb), 0.5); }
+.block-actions-area button.debug { color: var(--warning-color); border-color: rgba(var(--warning-color-rgb), 0.3); }
+.block-actions-area button.debug:hover:not(:disabled) { background-color: rgba(var(--warning-color-rgb), 0.15); border-color: rgba(var(--warning-color-rgb), 0.5); }
+.block-actions-area button.explain { color: var(--info-color); border-color: rgba(var(--info-color-rgb), 0.3); }
+.block-actions-area button.explain:hover:not(:disabled) { background-color: rgba(var(--info-color-rgb), 0.15); border-color: rgba(var(--info-color-rgb), 0.5); }

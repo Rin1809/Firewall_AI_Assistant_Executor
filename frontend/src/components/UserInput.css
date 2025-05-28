@@ -1,23 +1,22 @@
-/* frontend/src/components/UserInput.css */
+/* Firewall AI Assistant  - Executor\frontend\src\components\UserInput.css */
 .user-input-container {
-    /* padding bên dưới, giữ padding trái/phải */
     padding: var(--spacing-unit) calc(var(--spacing-unit) * 3) calc(var(--spacing-unit) * 2) calc(var(--spacing-unit) * 3);
     background-color: var(--bg-primary);
-    border-top: 1px solid #131314;
-    margin-top: auto;
+    border-top: 1px solid #131314; /* This border is important */
+    margin-top: 0; /* Sits directly below the log viewer (if visible) or interaction area */
     width: 100%;
-    flex-shrink: 0; /* Khong co lai */
+    flex-shrink: 0;
 }
 
 .user-input-area {
     display: flex;
-    flex-direction: column; /* De chip o tren input chinh */
+    flex-direction: column;
     background-color: var(--bg-secondary);
     border: 1px solid #1e1f20;
-    border-radius: 24px;
-    padding: calc(var(--spacing-unit) * 1) var(--spacing-unit) calc(var(--spacing-unit) * 1) calc(var(--spacing-unit) * 1.5);
+    border-radius: 24px; /* Consistent rounded corners */
+    padding: calc(var(--spacing-unit) * 0.75); /* Reduced overall padding a bit */
     width: 100%;
-    max-width: 700px; /* Tang chieu rong len chut */
+    max-width: var(--max-content-width); /* Use global max width */
     margin-left: auto;
     margin-right: auto;
     box-shadow: 0 2px 10px rgba(0,0,0,0.3);
@@ -25,42 +24,38 @@
     transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-/* Hieu ung focus cho ca khu vuc */
 .user-input-area:focus-within {
     border-color: var(--accent-primary);
     box-shadow: 0 0 0 1px var(--accent-primary), 0 2px 10px rgba(0,0,0,0.3);
 }
 
+/* New bar for controls (chips and log toggle) */
+.input-controls-bar {
+    display: flex;
+    justify-content: space-between; /* Pushes log toggle to the right */
+    align-items: center;
+    padding: 0 calc(var(--spacing-unit) * 0.75) calc(var(--spacing-unit) * 0.75) calc(var(--spacing-unit) * 0.75);
+    /* padding-bottom only if chips are visible, or always some space */
+    min-height: 28px; /* Ensure bar has some height even if chips are hidden */
+}
 .input-suggestion-chips {
-    /* Base styles for the container */
     display: flex;
     gap: var(--spacing-unit);
-    padding-left: calc(var(--spacing-unit) * 0.5);
     flex-wrap: wrap;
-    align-self: flex-start; /* Can trai chip */
-
-    /* Animation styles for appearing/disappearing */
-    overflow: hidden;
-    max-height: 0; /* Start collapsed */
-    opacity: 0;    /* Start transparent */
-    margin-bottom: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    transition:
-        max-height 0.3s ease-out,
-        opacity 0.2s ease-out,
-        margin-bottom 0.3s ease-out,
-        padding-top 0.3s ease-out,
-        padding-bottom 0.3s ease-out;
+    align-items: center;
+    /* Removed max-height/opacity transitions from here, visibility controlled by parent */
+}
+.input-suggestion-chips.visible { /* Only applies if targetOs is fortios */
+    /* Styles if chips should only show when 'visible' class is added */
 }
 
 .suggestion-chip {
     background-color: var(--bg-tertiary);
     color: var(--text-secondary);
-    padding: calc(var(--spacing-unit)*0.6) calc(var(--spacing-unit)*1.25);
-    border-radius: 16px;
+    padding: calc(var(--spacing-unit)*0.5) calc(var(--spacing-unit)*1); /* Slightly less padding */
+    border-radius: 14px; /* More rounded */
     border: 1px solid var(--border-color);
-    font-size: 0.8rem;
+    font-size: 0.75rem; /* Smaller chip text */
     font-weight: 500;
     display: inline-flex;
     align-items: center;
@@ -77,56 +72,59 @@
 }
 
 .suggestion-chip.interactive-fgt-chip {
-    color: #686868;
-    border-color: #2d2d2d;
-    background-color: var(--bg-tertiary);
+    color: var(--text-secondary); /* More consistent default color */
+    border-color: var(--border-color);
 }
 .suggestion-chip.interactive-fgt-chip:hover:not(:disabled) {
-    background-color: #474747c0; /* Mau nen khi hover */
+    background-color: #474747c0; 
     color: #ffffff;
 }
-
-/* Trang thai active cho nut Tuong tac FGT */
 .suggestion-chip.interactive-fgt-chip.active {
-    background-color: #7779ff49; /* Mau nen khi active */
-    color: #ffffff; /* Mau chu khi active */
-    font-weight: 600; /* Dam hon chut khi active */
+    background-color: rgba(var(--accent-primary-rgb), 0.25); 
+    color: var(--accent-primary);
+    border-color: rgba(var(--accent-primary-rgb), 0.4);
+    font-weight: 600;
 }
 .suggestion-chip.interactive-fgt-chip.active:hover:not(:disabled) {
-    background-color: #7779ff63; /* Mau nen sang hon khi active va hover */
-    color: var(--bg-primary);
+    background-color: rgba(var(--accent-primary-rgb), 0.35);
 }
 
-/* Styles for when the chip container is visible */
-.input-suggestion-chips.visible {
-    max-height: 100px; /* Adjust if more chips/rows are possible */
-    opacity: 1;
-    margin-bottom: calc(var(--spacing-unit) * 1);
-    padding-top: calc(var(--spacing-unit) * 0.25);
-    padding-bottom: calc(var(--spacing-unit) * 0.25); /* Optional: if you want padding when visible */
+/* Log Toggle Button */
+.log-toggle-button {
+    color: var(--text-muted);
+    padding: calc(var(--spacing-unit) * 0.5) calc(var(--spacing-unit) * 0.75);
+    font-size: 0.8rem; /* Smaller icon */
+}
+.log-toggle-button:hover:not(:disabled) {
+    color: var(--text-accent);
+    background-color: var(--bg-tertiary);
+}
+.log-toggle-button svg:first-of-type { /* For ChevronsUp/Down */
+    font-size: 1.1em; /* Slightly larger chevron */
 }
 
-.main-input-wrapper { /* Wrapper cho textarea va nut send */
+
+.main-input-wrapper {
     display: flex;
-    align-items: flex-end; /* Giu can chinh duoi cung */
+    align-items: flex-end;
     width: 100%;
-    /* Khong can background/border rieng neu user-input-area da co */
+    padding: 0 calc(var(--spacing-unit) * 0.75); /* Padding for textarea and send button */
 }
 
 .user-input-area textarea {
     flex-grow: 1;
     background-color: transparent;
     border: none;
-    padding: calc(var(--spacing-unit)*0.5) var(--spacing-unit);
+    padding: calc(var(--spacing-unit)*0.75) var(--spacing-unit); /* Adjusted padding */
     color: var(--text-primary);
     font-family: inherit;
     font-size: 0.95rem;
     line-height: 1.6;
     max-height: 200px;
-    min-height: calc(1.6em + var(--spacing-unit) * 1); /* min-height dua vao line-height + padding */
+    min-height: calc(1.6em + var(--spacing-unit) * 1.5); /* Based on line-height + padding */
     resize: none;
     overflow-y: auto;
-    margin-right: var(--spacing-unit); /* Khoang cach voi nut send */
+    margin-right: var(--spacing-unit);
 }
 
 .user-input-area textarea:focus {
@@ -157,7 +155,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    align-self: flex-end;
+    align-self: flex-end; /* Aligns with bottom of textarea */
+    margin-bottom: calc(var(--spacing-unit) * 0.25); /* Fine-tune vertical alignment with textarea */
     flex-shrink: 0;
     transition: background-color 0.15s ease-out, transform 0.1s ease-out;
 }

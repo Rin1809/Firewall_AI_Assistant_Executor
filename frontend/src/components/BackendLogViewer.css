@@ -1,0 +1,44 @@
+/* Firewall AI Assistant  - Executor\frontend\src\components\BackendLogViewer.css */
+/* Styles for the internal elements of the log viewer */
+
+.log-header {
+  font-size: 0.75rem; /* 12px */
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: calc(var(--spacing-unit) * 0.75); /* 6px */
+  margin-bottom: calc(var(--spacing-unit) * 0.75); /* 6px */
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0; 
+}
+
+.log-content {
+  flex-grow: 1; 
+  overflow-y: auto; 
+  font-family: var(--code-font-family);
+  font-size: 0.8rem; /* Slightly smaller for logs, 12.8px */
+  line-height: 1.45;
+  color: var(--text-secondary);
+  padding-right: calc(var(--spacing-unit) * 0.5); /* Space for scrollbar */
+}
+
+.log-content .log-line {
+  margin: 0;
+  padding: 1px 0; /* Minimal vertical padding */
+  white-space: pre-wrap; 
+  word-break: break-all; 
+  border-bottom: 1px dashed rgba(var(--text-muted-rgb, 133, 136, 140), 0.08); /* Very subtle line separator */
+}
+.log-content .log-line:last-child {
+  border-bottom: none;
+}
+.log-content .log-placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Define --text-muted-rgb if not already defined globally for the dashed border */
+/* This is better placed in App.css or a global variables file */
+/* :root { */
+  /* --text-muted-rgb: 133, 136, 140; /* From --text-muted: #85888c; */
+/* } */

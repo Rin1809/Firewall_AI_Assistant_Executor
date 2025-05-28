@@ -1,6 +1,6 @@
-// frontend/src/components/UserInput.tsx
+// Firewall AI Assistant  - Executor\frontend\src\components\UserInput.tsx
 import React, { KeyboardEvent, useRef, useEffect } from 'react';
-import { FiSend, FiTool, FiMessageSquare } from 'react-icons/fi'; // Them FiMessageSquare
+import { FiSend, FiTool, FiMessageSquare, FiTerminal, FiChevronsUp, FiChevronsDown } from 'react-icons/fi'; // Added more icons
 import { TargetOS } from '../App';
 import './UserInput.css';
 
@@ -12,6 +12,8 @@ interface UserInputProps {
   targetOs: TargetOS;
   isFortiGateInteractiveMode: boolean;
   onToggleFortiGateInteractiveMode: () => void;
+  isLogViewerVisible: boolean; // New prop
+  onToggleLogViewer: () => void;  // New prop
 }
 
 const UserInput: React.FC<UserInputProps> = ({
@@ -22,6 +24,8 @@ const UserInput: React.FC<UserInputProps> = ({
   targetOs,
   isFortiGateInteractiveMode,
   onToggleFortiGateInteractiveMode,
+  isLogViewerVisible, // Use new prop
+  onToggleLogViewer,  // Use new prop
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -45,7 +49,7 @@ const UserInput: React.FC<UserInputProps> = ({
   const getPlaceholderText = () => {
       if (targetOs === 'fortios') {
           return isFortiGateInteractiveMode
-            ? "Nhập yêu cầu tạo lệnh/cấu hình FortiGate (AI có thể gọi tool lấy thông tin)..."
+            ? "Nhập yêu cầu tạo lệnh/cấu hình FortiGate (AI có thể gọi tool)..."
             : "Chat với FortiAI về FortiGate (AI có thể gọi tool lấy thông tin)...";
       }
       return "Nhập yêu cầu (Ctrl+Enter để gửi)...";
@@ -54,18 +58,30 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <div className="user-input-container">
       <div className="user-input-area">
-        <div className={`input-suggestion-chips ${targetOs === 'fortios' ? 'visible' : ''}`}>
-          {targetOs === 'fortios' && (
-              <button
-                onClick={onToggleFortiGateInteractiveMode}
+        <div className={`input-controls-bar ${targetOs === 'fortios' ? 'has-fgt-chip' : ''}`}>
+            <div className={`input-suggestion-chips ${targetOs === 'fortios' ? 'visible' : ''}`}>
+            {targetOs === 'fortios' && (
+                <button
+                    onClick={onToggleFortiGateInteractiveMode}
+                    disabled={isLoading}
+                    className={`suggestion-chip interactive-fgt-chip ${isFortiGateInteractiveMode ? 'active' : ''}`}
+                    title={isFortiGateInteractiveMode ? "Chế độ Tạo Lệnh FortiGate (AI ưu tiên tạo lệnh, có thể gọi tool)" : "Chế độ Chat FortiGate (AI ưu tiên trả lời, có thể gọi tool)"}
+                >
+                    {isFortiGateInteractiveMode ? <FiTool size="0.9em" style={{ marginRight: '6px' }} /> : <FiMessageSquare size="0.9em" style={{ marginRight: '6px' }} />}
+                    {isFortiGateInteractiveMode ? 'Tạo Lệnh' : 'Chat'}
+                </button>
+            )}
+            </div>
+            <button
+                onClick={onToggleLogViewer}
                 disabled={isLoading}
-                className={`suggestion-chip interactive-fgt-chip ${isFortiGateInteractiveMode ? 'active' : ''}`}
-                title={isFortiGateInteractiveMode ? "Chế độ Tạo Lệnh FortiGate (AI ưu tiên tạo lệnh, có thể gọi tool)" : "Chế độ Chat FortiGate (AI ưu tiên trả lời, có thể gọi tool)"}
-              >
-                {isFortiGateInteractiveMode ? <FiTool size="0.9em" style={{ marginRight: '6px' }} /> : <FiMessageSquare size="0.9em" style={{ marginRight: '6px' }} />}
-                {isFortiGateInteractiveMode ? 'Tạo Lệnh (ON)' : 'Chat (ON)'}
-              </button>
-          )}
+                className="icon-button subtle log-toggle-button"
+                title={isLogViewerVisible ? "Ẩn Logs Backend" : "Hiện Logs Backend"}
+                aria-label={isLogViewerVisible ? "Ẩn Logs Backend" : "Hiện Logs Backend"}
+            >
+                {isLogViewerVisible ? <FiChevronsDown /> : <FiChevronsUp />} 
+                <FiTerminal style={{ marginLeft: '4px' }}/>
+            </button>
         </div>
         <div className="main-input-wrapper">
           <textarea

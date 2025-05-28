@@ -1,4 +1,4 @@
-# backend/routes.py
+# Firewall AI Assistant  - Executor\backend\routes.py
 import os
 import sys
 import subprocess
@@ -7,6 +7,10 @@ import re
 import json
 from datetime import datetime
 from flask import request, jsonify, Blueprint, current_app
+import logging # Ensure logging is imported for isinstance check
+import logging.handlers # Ensure handlers are imported for isinstance check
+import glob # For finding the latest log file if needed, though current setup is one file.
+
 
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig, SafetySettingDict, HarmCategory
@@ -792,3 +796,39 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
     
     logger.error("FGT Chat (FC): Vong lap Function Calling ket thuc bat thuong.")
     return jsonify({"error": "Xử lý yêu cầu chat FortiGate thất bại.", "thoughts": thoughts_for_ui_chat}), 500
+
+@api_bp.route('/backend_logs', methods=['GET'])
+def get_backend_logs():
+    logger = current_app.logger
+    log_file_path_from_app = None
+
+    if hasattr(logger, 'handlers'):
+        for handler in logger.handlers:
+            if isinstance(handler, logging.handlers.RotatingFileHandler) or isinstance(handler, logging.FileHandler):
+                if hasattr(handler, 'baseFilename') and handler.baseFilename: # Check if baseFilename is not None or empty
+                    log_file_path_from_app = handler.baseFilename
+                    break
+    
+    if not log_file_path_from_app:
+        project_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        logs_dir_path = os.path.join(project_root_dir, 'logs')
+        log_file_path_from_app = os.path.join(logs_dir_path, 'gemini_executor.log')
+        logger.info(f"Log path from handler not found or invalid, falling back to: {log_file_path_from_app}")
+
+    if not os.path.exists(log_file_path_from_app):
+        logger.error(f"Backend log file not found at: {log_file_path_from_app}")
+        return jsonify({"logs": [f"Log file '{os.path.basename(log_file_path_from_app)}' not found."], "error": "Log file not found"}), 404
+
+    try:
+        lines_to_fetch = int(request.args.get('lines', 50)) 
+        if lines_to_fetch <= 0 or lines_to_fetch > 500: 
+            lines_to_fetch = 50
+            
+        with open(log_file_path_from_app, 'r', encoding='utf-8') as f:
+            all_lines = f.readlines()
+            log_lines = [line.strip() for line in all_lines[-lines_to_fetch:]]
+        
+        return jsonify({"logs": log_lines})
+    except Exception as e:
+        logger.error(f"Error reading backend log file '{log_file_path_from_app}': {e}", exc_info=True)
+        return jsonify({"logs": [f"Error reading log file: {str(e)}"], "error": str(e)}), 500

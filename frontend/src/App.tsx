@@ -1,12 +1,12 @@
-// frontend/src/App.tsx
+// Firewall AI Assistant  - Executor\frontend\src\App.tsx
 import React, { useState, ChangeEvent, useEffect, useCallback } from 'react';
 import CenterArea from './components/CenterArea';
 import Sidebar from './components/Sidebar';
-import AiThinkingDisplay from './components/AiThinkingDisplay';
+// AiThinkingDisplay is imported within components that use it
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
-import { FiCheckSquare, FiSquare, FiEdit, FiSave, FiCpu } from 'react-icons/fi';
+// Icons are imported within components that use them
 
 // --- Dinh nghia kieu du lieu (Interfaces) ---
 export interface ExecutionResult {
@@ -80,6 +80,7 @@ export interface ConversationBlock {
     isNew?: boolean;
     generatedType?: string;
     thoughts?: AiThought[];
+    parentConversation?: ConversationBlock[];
 }
 // ---------------------------------------------
 
@@ -91,6 +92,8 @@ const FILE_TYPE_STORAGE_KEY = 'geminiExecutorFileType';
 const CUSTOM_FILE_NAME_STORAGE_KEY = 'geminiExecutorCustomFileName';
 const FGT_INTERACTIVE_MODE_STORAGE_KEY = 'geminiExecutorFgtInteractiveMode';
 const FGT_CONTEXT_COMMANDS_STORAGE_KEY = 'geminiExecutorFgtContextCommands';
+const LOG_VIEWER_VISIBLE_KEY = 'geminiExecutorLogViewerVisible';
+
 
 const NEW_BLOCK_ANIMATION_DURATION = 500;
 
@@ -164,6 +167,53 @@ function App() {
 
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
   const [currentEditingCode, setCurrentEditingCode] = useState<string | null>(null);
+  
+  const [backendLogs, setBackendLogs] = useState<string[]>(["Đang chờ log từ backend..."]);
+  const [isLogViewerVisible, setIsLogViewerVisible] = useState<boolean>(() => {
+    const saved = localStorage.getItem(LOG_VIEWER_VISIBLE_KEY);
+    return saved ? JSON.parse(saved) : false; // Default to false
+  });
+
+  const toggleLogViewer = useCallback(() => {
+    setIsLogViewerVisible(prev => {
+        const newState = !prev;
+        localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(newState));
+        return newState;
+    });
+  }, []);
+
+  const fetchBackendLogs = useCallback(async () => {
+    try {
+      const response = await fetch('http://localhost:5001/api/backend_logs?lines=75'); 
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({error: "Lỗi không xác định khi fetch logs"}));
+        const errorMsg = `Lỗi fetch logs: ${errorData.error || response.statusText || response.status}`;
+        setBackendLogs(prevLogs => {
+            if (prevLogs.length > 0 && prevLogs[prevLogs.length -1].startsWith("Lỗi fetch logs:")) return prevLogs;
+            return [...prevLogs.slice(-100), errorMsg];
+        });
+        return;
+      }
+      const data = await response.json();
+      if (data.logs && Array.isArray(data.logs)) {
+        setBackendLogs(data.logs);
+      }
+    } catch (error: any) {
+      console.error("Failed to fetch backend logs:", error);
+      const errorMsg = `Lỗi mạng khi fetch logs: ${error.message || String(error)}`;
+      setBackendLogs(prevLogs => {
+        if (prevLogs.length > 0 && prevLogs[prevLogs.length -1].startsWith("Lỗi mạng khi fetch logs:")) return prevLogs;
+        return [...prevLogs.slice(-100), errorMsg];
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBackendLogs(); 
+    const intervalId = setInterval(fetchBackendLogs, 7000); 
+    return () => clearInterval(intervalId);
+  }, [fetchBackendLogs]);
+
 
    useEffect(() => {
         const newBlockIds = conversation.filter(b => b.isNew).map(b => b.id);
@@ -183,11 +233,6 @@ function App() {
         setIsFortiGateInteractiveMode(prevMode => {
             const newMode = !prevMode;
             localStorage.setItem(FGT_INTERACTIVE_MODE_STORAGE_KEY, String(newMode));
-            if (newMode) {
-                // toast.info("Đã bật chế độ tương tác FortiGate (AI sẽ tạo lệnh).");
-            } else {
-                // toast.info("Đã tắt chế độ tương tác FortiGate (AI sẽ chat).");
-            }
             return newMode;
         });
     }, []);
@@ -385,7 +430,6 @@ function App() {
     }
   }, [modelConfig, useUiApiKey, uiApiKey, fortiGateConfig, fortiGateContextCommands]);
 
-  // Doi ten ham cho dung chuan JS/TS
   const addThoughtsAndResultToConversation = useCallback((
     loadingId: string,
     apiResponse: ApiResponseWithThoughts,
@@ -397,40 +441,32 @@ function App() {
         let newBlocksToAdd: ConversationBlock[] = [];
         const now = new Date().toISOString();
 
-        // 1. Them block suy nghi (neu co)
         if (apiResponse.thoughts && apiResponse.thoughts.length > 0) {
             newBlocksToAdd.push({
-                type: 'ai_thinking_process',
-                data: null, // Hoac mot title cho block suy nghi
-                id: loadingId + '_think',
-                timestamp: now,
-                isNew: true,
-                thoughts: apiResponse.thoughts
+                type: 'ai_thinking_process', data: null, id: loadingId + '_think',
+                timestamp: now, isNew: true, thoughts: apiResponse.thoughts,
+                parentConversation: prevConv // Pass current conversation for context
             });
         }
 
-        // 2. Them block ket qua chinh
         let mainResultData = resultDataExtractor(apiResponse);
-        // Dam bao data khong la undefined, neu la undefined thi set la null hoac ''
         if (mainResultData === undefined) {
-            if (resultBlockType === 'ai-code') mainResultData = ''; // Ma rong
+            if (resultBlockType === 'ai-code') mainResultData = ''; 
             else if (resultBlockType === 'explanation' || resultBlockType === 'review') mainResultData = { [resultBlockType]: '(Không có nội dung)'};
             else mainResultData = null;
         }
 
-
         newBlocksToAdd.push({
-            type: resultBlockType,
-            data: mainResultData,
-            id: loadingId + '_res',
-            timestamp: now,
-            isNew: true,
-            generatedType: apiResponse.generated_for_type,
+            type: resultBlockType, data: mainResultData, id: loadingId + '_res',
+            timestamp: now, isNew: true, generatedType: apiResponse.generated_for_type,
+            parentConversation: prevConv, // Pass current conversation for context
             ...(extraResultProps || {})
         });
 
         const finalConversation = prevConv.filter(b => b.id !== loadingId);
-        return [...finalConversation, ...newBlocksToAdd];
+        // Update parentConversation for all blocks in the new array
+        const updatedFinalConversation = [...finalConversation, ...newBlocksToAdd];
+        return updatedFinalConversation.map(b => ({...b, parentConversation: updatedFinalConversation}));
     });
   }, []);
 
@@ -443,11 +479,12 @@ function App() {
     setCollapsedStates(prev => ({ ...prev, ...newCollapsedStates }));
 
     const userBlockTypeSuffix = targetOs === 'fortios' && isFortiGateInteractiveMode ? '_u_fgt_interactive' : '_u_gen';
-    const newUserBlock: ConversationBlock = { type: 'user', data: currentPrompt, id: Date.now().toString() + userBlockTypeSuffix, timestamp: now, isNew: true };
+    const newUserBlock: ConversationBlock = { type: 'user', data: currentPrompt, id: Date.now().toString() + userBlockTypeSuffix, timestamp: now, isNew: true, parentConversation: conversation };
     const loadingId = Date.now().toString() + '_gload';
-    const loadingBlock: ConversationBlock = { type: 'loading', data: targetOs === 'fortios' && isFortiGateInteractiveMode ? 'FortiAI đang tạo lệnh (có thể gọi tool)...' : 'Đang tạo...', id: loadingId, timestamp: now, isNew: true };
-
-    setConversation(prev => [...prev, newUserBlock, loadingBlock]);
+    const loadingBlock: ConversationBlock = { type: 'loading', data: targetOs === 'fortios' && isFortiGateInteractiveMode ? 'FortiAI đang tạo lệnh (có thể gọi tool)...' : 'Đang tạo...', id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: [...conversation, newUserBlock] };
+    
+    const updatedConversationWithUserAndLoading = [...conversation, newUserBlock, loadingBlock];
+    setConversation(updatedConversationWithUserAndLoading.map(b => ({ ...b, parentConversation: updatedConversationWithUserAndLoading })));
     setCollapsedStates(prev => ({ ...prev, [newUserBlock.id]: false }));
 
     const finalFileTypeForRequest = fileType === 'other' ? customFileName.trim() || 'txt' : fileType;
@@ -476,7 +513,12 @@ function App() {
               'error', (d) => d.error
           );
       } else {
-          setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: loadingId + '_err', timestamp: new Date().toISOString(), isNew: true, thoughts: [] } : b));
+          setConversation(prev => {
+              const convWithoutLoading = prev.filter(b => b.id !== loadingId);
+              const errorBlock = { type: 'error', data: errorMessage, id: loadingId + '_err', timestamp: new Date().toISOString(), isNew: true, thoughts:[], parentConversation: convWithoutLoading };
+              const finalConv = [...convWithoutLoading, errorBlock];
+              return finalConv.map(b => ({...b, parentConversation: finalConv}));
+          });
       }
     } finally { setIsLoading(false); }
   }, [sendApiRequest, conversation, setPrompt, fileType, customFileName, targetOs, isFortiGateInteractiveMode, addThoughtsAndResultToConversation]);
@@ -488,18 +530,19 @@ function App() {
     conversation.filter(b => b.type === 'user').forEach(block => { newCollapsedStates[block.id] = true; });
     setCollapsedStates(prev => ({ ...prev, ...newCollapsedStates }));
 
-    const newUserBlock: ConversationBlock = { type: 'user', data: currentPrompt, id: Date.now().toString() + '_u_chat', timestamp: now, isNew: true };
+    const newUserBlock: ConversationBlock = { type: 'user', data: currentPrompt, id: Date.now().toString() + '_u_chat', timestamp: now, isNew: true, parentConversation: conversation };
     const loadingId = Date.now().toString() + '_chatload';
-    const loadingBlock: ConversationBlock = { type: 'loading', data: 'FortiAI đang nghĩ (có thể gọi tool)...', id: loadingId, timestamp: now, isNew: true };
+    const loadingBlock: ConversationBlock = { type: 'loading', data: 'FortiAI đang nghĩ (có thể gọi tool)...', id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: [...conversation, newUserBlock] };
 
-    setConversation(prev => [...prev, newUserBlock, loadingBlock]);
+    const updatedConversationWithUserAndLoading = [...conversation, newUserBlock, loadingBlock];
+    setConversation(updatedConversationWithUserAndLoading.map(b => ({ ...b, parentConversation: updatedConversationWithUserAndLoading })));
     setCollapsedStates(prev => ({ ...prev, [newUserBlock.id]: false }));
 
     const relevantHistoryTypesForFgtChat: ConversationBlock['type'][] = [
       'user', 'ai-code', 'execution', 'explanation', 'ai_thinking_process'
     ];
     const MAX_HISTORY_BLOCKS_FOR_CHAT = 10;
-    const historyForChatContext = conversation
+    const historyForChatContext = conversation // Use the state `conversation` which is up-to-date before this call
       .filter(b => relevantHistoryTypesForFgtChat.includes(b.type))
       .slice(-MAX_HISTORY_BLOCKS_FOR_CHAT)
       .map(block => {
@@ -555,7 +598,12 @@ function App() {
               'error', (d) => d.error
           );
       } else {
-         setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'error', data: errorMessage, id: loadingId + '_chaterr', timestamp: new Date().toISOString(), isNew: true, thoughts:[] } : b));
+         setConversation(prev => {
+            const convWithoutLoading = prev.filter(b => b.id !== loadingId);
+            const errorBlock = { type: 'error', data: errorMessage, id: loadingId + '_chaterr', timestamp: new Date().toISOString(), isNew: true, thoughts:[], parentConversation: convWithoutLoading };
+            const finalConv = [...convWithoutLoading, errorBlock];
+            return finalConv.map(b => ({...b, parentConversation: finalConv}));
+          });
       }
     } finally { setIsLoading(false); }
   }, [sendApiRequest, conversation, setPrompt, addThoughtsAndResultToConversation]);
@@ -565,6 +613,7 @@ function App() {
         toast.warn('Vui lòng nhập yêu cầu.');
         return;
     }
+    // Crucial: Pass the current `conversation` state to the handlers
     if (targetOs === 'fortios') {
         if (isFortiGateInteractiveMode) {
             await handleGenerate(currentPrompt);
@@ -574,7 +623,7 @@ function App() {
     } else {
         await handleGenerate(currentPrompt);
     }
-  }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat]);
+  }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat, conversation]);
 
   const handleReviewCode = useCallback(async (codeToReviewFromBlock: string | null, blockId: string) => {
     const blockToReview = conversation.find(b => b.id === blockId);
@@ -589,22 +638,24 @@ function App() {
     setIsReviewing(true);
     const now = new Date().toISOString();
     const loadingId = Date.now().toString() + '_rload';
-    const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang đánh giá...', id: loadingId, timestamp: now, isNew: true, thoughts: [] };
+    const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang đánh giá...', id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: conversation };
     const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-    const newConv = [...conversation];
-    if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-    setConversation(newConv);
+    
+    const newConvWithLoading = [...conversation];
+    if (originalBlockIndex !== -1) newConvWithLoading.splice(originalBlockIndex + 1, 0, loadingBlock); 
+    else newConvWithLoading.push(loadingBlock);
+    setConversation(newConvWithLoading.map(b => ({ ...b, parentConversation: newConvWithLoading })));
 
     try {
         const data: ReviewResult = await sendApiRequest('review', { code: codeToReview, file_type: fileTypeToSend }) as ReviewResult;
-        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data, id: loadingId + '_r', timestamp: new Date().toISOString(), isNew: true, thoughts: (data as ApiResponseWithThoughts).thoughts || [] } : b));
+        addThoughtsAndResultToConversation(loadingId, data as ApiResponseWithThoughts, 'review', d => d);
         toast.success("Đã đánh giá xong!");
     } catch (err: any) {
         const errorData: ReviewResult = { error: err.message || 'Lỗi review.' };
-        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'review', data: errorData, id: loadingId + '_rerr', timestamp: new Date().toISOString(), isNew: true, thoughts: err.thoughts || [] } : b));
+        addThoughtsAndResultToConversation(loadingId, { ...errorData, thoughts: err.thoughts } as ApiResponseWithThoughts, 'review', d => d);
         toast.error(err.message || 'Lỗi review.');
     } finally { setIsReviewing(false); }
-  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode]);
+  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode, addThoughtsAndResultToConversation]);
 
   const handleExecute = useCallback(async (codeToExecuteFromBlock: string | null, blockId: string) => {
     const blockToExecute = conversation.find(b => b.id === blockId);
@@ -622,17 +673,18 @@ function App() {
     const toastId = toast.loading(toastMsg);
     const executionBlockId = Date.now().toString() + '_ex';
     const now = new Date().toISOString();
-    const executionBlockBase: Partial<ConversationBlock> = { type: 'execution', id: executionBlockId, timestamp: now, isNew: true, thoughts: [] };
     const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-    const newConv = [...conversation];
-    let resultData: ExecutionResult | null = null;
-
+    
+    const newConvForExec = [...conversation]; // Capture current conversation state
+    // No loading block added here, result is added directly
+    
     const endpoint = 'execute';
     let payload: any = { code: codeToExecute, file_type: execType };
     if (!isFGTExecution) {
         payload.run_as_admin = runAsAdmin;
     }
 
+    let resultData: ExecutionResult | null = null;
     try {
         const data: ExecutionResult = await sendApiRequest(endpoint, payload, isFGTExecution) as ExecutionResult;
         resultData = { ...data, codeThatFailed: codeToExecute, executed_file_type: execType };
@@ -652,12 +704,21 @@ function App() {
     } finally {
         setIsExecuting(false);
         if (resultData) {
-             const blockToAdd = { ...executionBlockBase, data: resultData } as ConversationBlock;
-             if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
-             else setConversation(prev => [...prev, blockToAdd]);
+             const blockToAdd: ConversationBlock = { type: 'execution', data: resultData, id: executionBlockId, timestamp: now, isNew: true, thoughts: (resultData as any).thoughts || [], parentConversation: newConvForExec };
+             
+             setConversation(prev => {
+                const currentConv = [...prev]; // Make a new mutable copy
+                const insertAtIndex = currentConv.findIndex(b => b.id === blockId);
+                if (insertAtIndex !== -1) {
+                    currentConv.splice(insertAtIndex + 1, 0, blockToAdd);
+                } else {
+                    currentConv.push(blockToAdd);
+                }
+                return currentConv.map(b => ({ ...b, parentConversation: currentConv }));
+             });
         }
     }
-  }, [runAsAdmin, conversation, sendApiRequest, editingBlockId, currentEditingCode]);
+  }, [runAsAdmin, conversation, sendApiRequest, editingBlockId, currentEditingCode, addThoughtsAndResultToConversation]);
 
 
   const handleDebug = useCallback(async (codeToDebugFromExecResult: string | null, lastExecutionResult: ExecutionResult | null, blockIdOfExecution: string) => {
@@ -669,12 +730,15 @@ function App() {
        };
 
        let codeForDebugging = codeToDebugFromExecResult;
-       const executionBlockIndex = conversation.findIndex(b => b.id === blockIdOfExecution);
+       const executionBlock = conversation.find(b => b.id === blockIdOfExecution);
+       const fullConversationContextForDebug = executionBlock?.parentConversation || conversation;
+       const executionBlockIndex = fullConversationContextForDebug.findIndex(b => b.id === blockIdOfExecution);
+
        let originalAICodeBlock: ConversationBlock | undefined;
        if (executionBlockIndex > -1) {
            for (let i = executionBlockIndex - 1; i >= 0; i--) {
-               if (conversation[i].type === 'ai-code') {
-                   originalAICodeBlock = conversation[i];
+               if (fullConversationContextForDebug[i].type === 'ai-code') {
+                   originalAICodeBlock = fullConversationContextForDebug[i];
                    break;
                }
            }
@@ -691,18 +755,20 @@ function App() {
        setIsDebugging(true);
        const now = new Date().toISOString();
        const loadingId = Date.now().toString() + '_dload';
-       const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang gỡ rối...', id: loadingId, timestamp: now, isNew: true, thoughts: [] };
-       const originalBlockIndex = conversation.findIndex(b => b.id === blockIdOfExecution);
-       const newConv = [...conversation];
-       if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-       setConversation(newConv);
+       const loadingBlock: ConversationBlock = { type: 'loading', data: 'Đang gỡ rối...', id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContextForDebug };
+       
+       const newConvWithLoading = [...fullConversationContextForDebug];
+       if (executionBlockIndex !== -1) newConvWithLoading.splice(executionBlockIndex + 1, 0, loadingBlock); 
+       else newConvWithLoading.push(loadingBlock);
+       setConversation(newConvWithLoading.map(b => ({ ...b, parentConversation: newConvWithLoading })));
+
 
        let userPromptForDebug = "(Ko tìm thấy prompt gốc)";
-       const searchEndIndex = originalAICodeBlock ? conversation.findIndex(b => b.id === originalAICodeBlock!.id) : executionBlockIndex;
+       const searchEndIndex = originalAICodeBlock ? fullConversationContextForDebug.findIndex(b => b.id === originalAICodeBlock!.id) : executionBlockIndex;
        if (searchEndIndex > -1) {
            for (let i = searchEndIndex - 1; i >= 0; i--) {
-               if (conversation[i].type === 'user') {
-                   userPromptForDebug = conversation[i].data;
+               if (fullConversationContextForDebug[i].type === 'user') {
+                   userPromptForDebug = fullConversationContextForDebug[i].data;
                    break;
                }
            }
@@ -717,32 +783,31 @@ function App() {
                file_type: fileTypeToSend,
            };
            const data: DebugResult = await sendApiRequest('debug', payload) as DebugResult;
-           setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data, id: loadingId + '_dbg', timestamp: new Date().toISOString(), isNew: true, thoughts: (data as ApiResponseWithThoughts).thoughts || [] } : b));
+           addThoughtsAndResultToConversation(loadingId, data as ApiResponseWithThoughts, 'debug', d => d);
            toast.success("Đã phân tích gỡ rối!");
        } catch (err: any) {
            const errorData: DebugResult = { explanation: null, corrected_code: null, error: err.message };
-           setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'debug', data: errorData, id: loadingId + '_dbgerr', timestamp: new Date().toISOString(), isNew: true, thoughts: err.thoughts || [] } : b));
+           addThoughtsAndResultToConversation(loadingId, { ...errorData, thoughts: err.thoughts } as ApiResponseWithThoughts, 'debug', d => d);
            toast.error(`Gỡ rối thất bại: ${err.message}`);
        } finally { setIsDebugging(false); }
-   }, [conversation, sendApiRequest, editingBlockId, currentEditingCode]);
+   }, [conversation, sendApiRequest, editingBlockId, currentEditingCode, addThoughtsAndResultToConversation]);
 
    const applyCorrectedCode = useCallback((correctedCode: string, originalDebugBlockId: string) => {
        const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
+       const fullConversationContext = debugBlock?.parentConversation || conversation;
        const newGeneratedType = debugBlock?.data?.original_language || 'py';
 
        const newBlock: ConversationBlock = {
-           type: 'ai-code',
-           data: correctedCode,
-           generatedType: newGeneratedType,
-           id: Date.now().toString() + '_ac',
-           timestamp: new Date().toISOString(),
-           isNew: true,
-           thoughts: []
+           type: 'ai-code', data: correctedCode, generatedType: newGeneratedType,
+           id: Date.now().toString() + '_ac', timestamp: new Date().toISOString(),
+           isNew: true, thoughts: [], parentConversation: fullConversationContext
        };
-       const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
-       const newConv = [...conversation];
-       if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, newBlock); else newConv.push(newBlock);
-       setConversation(newConv);
+       const originalBlockIndex = fullConversationContext.findIndex(b => b.id === originalDebugBlockId);
+       
+       const newConv = [...fullConversationContext];
+       if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, newBlock); 
+       else newConv.push(newBlock);
+       setConversation(newConv.map(b => ({ ...b, parentConversation: newConv })));
 
        setEditingBlockId(newBlock.id);
        setCurrentEditingCode(correctedCode);
@@ -756,9 +821,12 @@ function App() {
      const toastId = toast.loading(`Đang cài ${packageName}...`);
      const installBlockId = Date.now().toString() + '_inst';
      const now = new Date().toISOString();
-     const installBlockBase: Partial<ConversationBlock> = { type: 'installation', id: installBlockId, timestamp: now, isNew: true, thoughts: [] };
-     const originalBlockIndex = conversation.findIndex(b => b.id === originalDebugBlockId);
-     const newConv = [...conversation];
+     
+     const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
+     const fullConversationContext = debugBlock?.parentConversation || conversation;
+     const originalBlockIndex = fullConversationContext.findIndex(b => b.id === originalDebugBlockId);
+     // No loading block for install, add result directly
+     
      let resultData : InstallationResult | null = null;
 
      try {
@@ -779,25 +847,37 @@ function App() {
      } finally {
          setIsInstalling(false);
           if (resultData) {
-              const blockToAdd = { ...installBlockBase, data: resultData } as ConversationBlock;
-              if (originalBlockIndex !== -1) { newConv.splice(originalBlockIndex + 1, 0, blockToAdd); setConversation(newConv); }
-              else setConversation(prev => [...prev, blockToAdd]);
+              const blockToAdd: ConversationBlock = { type: 'installation', data: resultData, id: installBlockId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContext };
+              
+              setConversation(prev => {
+                  const currentConv = [...prev]; // Use the most recent state for prev
+                  const insertAtIndex = currentConv.findIndex(b => b.id === originalDebugBlockId);
+                  if (insertAtIndex !== -1) {
+                      currentConv.splice(insertAtIndex + 1, 0, blockToAdd);
+                  } else {
+                      currentConv.push(blockToAdd);
+                  }
+                  return currentConv.map(b => ({ ...b, parentConversation: currentConv }));
+              });
           }
      }
   }, [conversation]);
 
   const handleExplain = useCallback(async (blockId: string, contentToExplain: any, context: string) => {
     const blockToExplain = conversation.find(b => b.id === blockId);
+    const fullConversationContext = blockToExplain?.parentConversation || conversation;
     const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined;
 
     setIsExplaining(true);
     const now = new Date().toISOString();
     const loadingId = Date.now().toString() + '_explload';
-    const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích...`, id: loadingId, timestamp: now, isNew: true, thoughts: [] };
-    const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
-    const newConv = [...conversation];
-    if (originalBlockIndex !== -1) newConv.splice(originalBlockIndex + 1, 0, loadingBlock); else newConv.push(loadingBlock);
-    setConversation(newConv);
+    const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích...`, id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContext };
+    const originalBlockIndex = fullConversationContext.findIndex(b => b.id === blockId);
+    
+    const newConvWithLoading = [...fullConversationContext];
+    if (originalBlockIndex !== -1) newConvWithLoading.splice(originalBlockIndex + 1, 0, loadingBlock); 
+    else newConvWithLoading.push(loadingBlock);
+    setConversation(newConvWithLoading.map(b => ({ ...b, parentConversation: newConvWithLoading })));
 
     let processedContent = contentToExplain;
     if (context === 'code' && editingBlockId === blockId && currentEditingCode !== null) {
@@ -822,20 +902,20 @@ function App() {
         if (fileTypeToSend) payload.file_type = fileTypeToSend;
 
         const data: ExplainResult = await sendApiRequest('explain', payload) as ExplainResult;
-        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data, id: loadingId + '_exp', timestamp: new Date().toISOString(), isNew: true, thoughts: (data as ApiResponseWithThoughts).thoughts || [] } : b));
+        addThoughtsAndResultToConversation(loadingId, data as ApiResponseWithThoughts, 'explanation', d => d);
         toast.success("Đã tạo giải thích!");
     } catch (err: any) {
         const errorData: ExplainResult = { error: err.message || 'Lỗi giải thích.' };
-        setConversation(prev => prev.map(b => b.id === loadingId ? { type: 'explanation', data: errorData, id: loadingId + '_experr', timestamp: new Date().toISOString(), isNew: true, thoughts: err.thoughts || [] } : b));
+        addThoughtsAndResultToConversation(loadingId, {...errorData, thoughts: err.thoughts } as ApiResponseWithThoughts, 'explanation', d => d);
         toast.error(err.message || 'Lỗi giải thích.');
     } finally { setIsExplaining(false); }
-  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode]);
+  }, [sendApiRequest, conversation, editingBlockId, currentEditingCode, addThoughtsAndResultToConversation]);
 
   useEffect(() => {
     localStorage.setItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY, JSON.stringify(fortiGateContextCommands));
   }, [fortiGateContextCommands]);
 
-  const isBusy = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
+  const isBusyOverall = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
 
   return (
     <div className="main-container">
@@ -843,7 +923,7 @@ function App() {
       <CenterArea
         conversation={conversation}
         isLoading={isLoading}
-        isBusy={isBusy}
+        isBusy={isBusyOverall}
         prompt={prompt}
         setPrompt={setPrompt}
         onPrimarySubmit={handleGenerateOrFortiGateChat}
@@ -867,6 +947,9 @@ function App() {
         onUpdateEditingCode={handleUpdateEditingCode}
         onSaveEditedCode={handleSaveEditedCode}
         onCancelEditCode={handleCancelEditCode}
+        backendLogs={backendLogs}
+        isLogViewerVisible={isLogViewerVisible}
+        onToggleLogViewer={toggleLogViewer}
       />
       <Sidebar
         isOpen={isSidebarOpen}
@@ -874,7 +957,7 @@ function App() {
         modelConfig={modelConfig}
         onConfigChange={handleConfigChange}
         onSaveSettings={handleSaveSettings}
-        isBusy={isBusy}
+        isBusy={isBusyOverall}
         runAsAdmin={runAsAdmin}
         uiApiKey={uiApiKey}
         useUiApiKey={useUiApiKey}
