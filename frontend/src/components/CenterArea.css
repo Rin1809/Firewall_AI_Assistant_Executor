@@ -83,14 +83,17 @@
   border-radius: 0; /* Start with no radius, will apply when visible */
   margin-bottom: 0; /* No margin when hidden */
 
-  transition: 
-    max-height 0.3s ease-in-out,  /* Thời gian cho max-height */
-    opacity 0.2s ease-in-out 0.05s, /* Thời gian cho opacity, với delay 0.05s */
-    padding-top 0.3s ease-in-out, /* Thời gian cho padding-top */
-    padding-bottom 0.3s ease-in-out, /* Thời gian cho padding-bottom */
-    border-width 0.3s ease-in-out, /* Thời gian cho border-width */
-    border-radius 0.3s ease-in-out, /* Thời gian cho border-radius */
-    margin-bottom 0.3s ease-in-out; /* Thời gian cho margin-bottom */
+  transition:
+    max-height 0.3s ease-in-out,
+    opacity 0.2s ease-in-out 0.05s,
+    padding-top 0.3s ease-in-out,
+    padding-bottom 0.3s ease-in-out,
+    border-top-width 0.3s ease-in-out,      /* THAY ĐỔI */
+    border-bottom-width 0.3s ease-in-out, /* THAY ĐỔI */
+    border-top-color 0.3s ease-in-out,     /* THAY ĐỔI */
+    border-bottom-color 0.3s ease-in-out,  /* THAY ĐỔI */
+    border-radius 0.3s ease-in-out,
+    margin-bottom 0.3s ease-in-out;
 }
 
 .backend-log-viewer-container.visible {

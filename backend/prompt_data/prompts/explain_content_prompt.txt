@@ -1,3 +1,5 @@
 {prompt_header}
+
+{additional_context_from_caller}
 {context_description}
 {prompt_instruction}

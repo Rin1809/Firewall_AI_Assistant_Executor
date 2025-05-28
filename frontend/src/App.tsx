@@ -2,13 +2,10 @@
 import React, { useState, ChangeEvent, useEffect, useCallback } from 'react';
 import CenterArea from './components/CenterArea';
 import Sidebar from './components/Sidebar';
-// AiThinkingDisplay is imported within components that use it
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
-// Icons are imported within components that use them
 
-// --- Dinh nghia kieu du lieu (Interfaces) ---
 export interface ExecutionResult {
   message: string;
   output: string;
@@ -39,6 +36,7 @@ export interface DebugResult {
     suggested_package?: string;
     error?: string;
     original_language?: string;
+    originalExecutionBlockId?: string; 
 }
 
 export interface ExplainResult {
@@ -82,9 +80,7 @@ export interface ConversationBlock {
     thoughts?: AiThought[];
     parentConversation?: ConversationBlock[];
 }
-// ---------------------------------------------
 
-// --- CONSTANTS ---
 const MODEL_NAME_STORAGE_KEY = 'geminiExecutorModelName';
 const FORTIGATE_CONFIG_STORAGE_KEY = 'geminiExecutorFortiGateConfig';
 const TARGET_OS_STORAGE_KEY = 'geminiExecutorTargetOS';
@@ -117,6 +113,13 @@ interface ApiResponseWithThoughts {
     error?: string;
     thoughts?: AiThought[];
     review?: string;
+    corrected_code?: string;
+    suggested_package?: string;
+    original_language?: string;
+    success?: boolean;
+    message?: string; 
+    output?: string; 
+    package_name?: string; 
 }
 
 
@@ -158,7 +161,7 @@ function App() {
   const [fortiGateContextCommands, setFortiGateContextCommands] = useState<Record<string, boolean>>(() => {
     const saved = localStorage.getItem(FGT_CONTEXT_COMMANDS_STORAGE_KEY);
     if (saved) {
-        try { return JSON.parse(saved); } catch (e) { console.error("Loi phan tich cmd FGT context da luu", e); }
+        try { return JSON.parse(saved); } catch (e) { console.error("Loi parse cmd FGT ctx", e); }
     }
     const initial: Record<string, boolean> = {};
     DEFAULT_FORTIGATE_CONTEXT_COMMANDS.forEach(cmd => initial[cmd] = true);
@@ -171,14 +174,15 @@ function App() {
   const [backendLogs, setBackendLogs] = useState<string[]>(["Đang chờ log từ backend..."]);
   const [isLogViewerVisible, setIsLogViewerVisible] = useState<boolean>(() => {
     const saved = localStorage.getItem(LOG_VIEWER_VISIBLE_KEY);
-    return saved ? JSON.parse(saved) : false; // Mac dinh an
+    return saved ? JSON.parse(saved) : false; 
   });
+  const [logViewerWasAutoOpened, setLogViewerWasAutoOpened] = useState<boolean>(false); // State moi
 
   const fetchBackendLogs = useCallback(async () => {
     try {
       const response = await fetch('http://localhost:5001/api/backend_logs?lines=75'); 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({error: "Lỗi không xác định khi fetch logs"}));
+        const errorData = await response.json().catch(() => ({error: "Lỗi ko xd khi fetch logs"}));
         const errorMsg = `Lỗi fetch logs: ${errorData.error || response.statusText || response.status}`;
         setBackendLogs(prevLogs => {
             if (prevLogs.length > 0 && prevLogs[prevLogs.length -1].startsWith("Lỗi fetch logs:")) return prevLogs;
@@ -209,27 +213,29 @@ function App() {
 
    const isBusyOverall = isLoading || isExecuting || isReviewing || isDebugging || isInstalling || isExplaining;
 
-  // Tu dong mo/dong log panel
   useEffect(() => {
     if (isBusyOverall) {
-      if (!isLogViewerVisible) { // Chi mo neu dang an
+      if (!isLogViewerVisible) { 
         setIsLogViewerVisible(true);
+        setLogViewerWasAutoOpened(true); // Danh dau la da mo tu dong
         localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(true));
       }
     } else {
-      // Khi khong busy, tu dong dong lai
-      if (isLogViewerVisible) { // Chi dong neu dang hien
+      // Chi tu dong dong neu no da duoc tu dong mo truoc do
+      if (isLogViewerVisible && logViewerWasAutoOpened) { 
         setIsLogViewerVisible(false);
+        setLogViewerWasAutoOpened(false); // Reset lai
         localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(false));
       }
     }
-  }, [isBusyOverall]); // Trigger khi isBusyOverall thay doi
+  }, [isBusyOverall, isLogViewerVisible, logViewerWasAutoOpened]); 
 
-  // Van giu ham toggle thu cong
   const toggleLogViewer = useCallback(() => {
     setIsLogViewerVisible(prev => {
         const newState = !prev;
         localStorage.setItem(LOG_VIEWER_VISIBLE_KEY, JSON.stringify(newState));
+        // Neu nguoi dung tu mo/dong, reset trang thai tu dong mo
+        setLogViewerWasAutoOpened(false);
         return newState;
     });
   }, []);
@@ -245,8 +251,7 @@ function App() {
             }, NEW_BLOCK_ANIMATION_DURATION + 150);
             return () => clearTimeout(timer);
         }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [JSON.stringify(conversation.filter(b => b.isNew).map(b => b.id))]);
+    }, [conversation]);
 
 
     const toggleFortiGateInteractiveMode = useCallback(() => {
@@ -465,26 +470,48 @@ function App() {
             newBlocksToAdd.push({
                 type: 'ai_thinking_process', data: null, id: loadingId + '_think',
                 timestamp: now, isNew: true, thoughts: apiResponse.thoughts,
-                parentConversation: prevConv // Pass current conversation for context
+                parentConversation: prevConv 
             });
         }
 
         let mainResultData = resultDataExtractor(apiResponse);
         if (mainResultData === undefined) {
             if (resultBlockType === 'ai-code') mainResultData = ''; 
-            else if (resultBlockType === 'explanation' || resultBlockType === 'review') mainResultData = { [resultBlockType]: '(Không có nội dung)'};
+            else if (resultBlockType === 'explanation' || resultBlockType === 'review') mainResultData = { [resultBlockType === 'review' ? 'review' : 'explanation']: '(Không có nội dung)'};
             else mainResultData = null;
         }
+        
+        if (typeof mainResultData === 'object' && mainResultData !== null && !Array.isArray(mainResultData)) {
+            if (resultBlockType === 'debug' && apiResponse.explanation !== undefined) {
+                mainResultData = { 
+                    explanation: apiResponse.explanation,
+                    corrected_code: apiResponse.corrected_code,
+                    suggested_package: apiResponse.suggested_package,
+                    original_language: apiResponse.original_language,
+                    error: apiResponse.error,
+                    ...(extraResultProps?.data || {}) 
+                };
+            } else if (resultBlockType === 'installation' && apiResponse.success !== undefined) {
+                 mainResultData = {
+                    success: apiResponse.success,
+                    message: apiResponse.message,
+                    output: apiResponse.output,
+                    error: apiResponse.error,
+                    package_name: apiResponse.package_name,
+                     ...(extraResultProps?.data || {})
+                };
+            }
+        }
+
 
         newBlocksToAdd.push({
             type: resultBlockType, data: mainResultData, id: loadingId + '_res',
             timestamp: now, isNew: true, generatedType: apiResponse.generated_for_type,
-            parentConversation: prevConv, // Pass current conversation for context
+            parentConversation: prevConv, 
             ...(extraResultProps || {})
         });
 
         const finalConversation = prevConv.filter(b => b.id !== loadingId);
-        // Update parentConversation for all blocks in the new array
         const updatedFinalConversation = [...finalConversation, ...newBlocksToAdd];
         return updatedFinalConversation.map(b => ({...b, parentConversation: updatedFinalConversation}));
     });
@@ -562,7 +589,7 @@ function App() {
       'user', 'ai-code', 'execution', 'explanation', 'ai_thinking_process'
     ];
     const MAX_HISTORY_BLOCKS_FOR_CHAT = 10;
-    const historyForChatContext = conversation // Use the state `conversation` which is up-to-date before this call
+    const historyForChatContext = conversation 
       .filter(b => relevantHistoryTypesForFgtChat.includes(b.type))
       .slice(-MAX_HISTORY_BLOCKS_FOR_CHAT)
       .map(block => {
@@ -633,7 +660,6 @@ function App() {
         toast.warn('Vui lòng nhập yêu cầu.');
         return;
     }
-    // Crucial: Pass the current `conversation` state to the handlers
     if (targetOs === 'fortios') {
         if (isFortiGateInteractiveMode) {
             await handleGenerate(currentPrompt);
@@ -643,7 +669,7 @@ function App() {
     } else {
         await handleGenerate(currentPrompt);
     }
-  }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat, conversation]);
+  }, [targetOs, isFortiGateInteractiveMode, handleGenerate, handleFortiGateChat]);
 
   const handleReviewCode = useCallback(async (codeToReviewFromBlock: string | null, blockId: string) => {
     const blockToReview = conversation.find(b => b.id === blockId);
@@ -693,10 +719,8 @@ function App() {
     const toastId = toast.loading(toastMsg);
     const executionBlockId = Date.now().toString() + '_ex';
     const now = new Date().toISOString();
-    const originalBlockIndex = conversation.findIndex(b => b.id === blockId);
     
-    const newConvForExec = [...conversation]; // Capture current conversation state
-    // No loading block added here, result is added directly
+    const newConvForExec = [...conversation]; 
     
     const endpoint = 'execute';
     let payload: any = { code: codeToExecute, file_type: execType };
@@ -727,7 +751,7 @@ function App() {
              const blockToAdd: ConversationBlock = { type: 'execution', data: resultData, id: executionBlockId, timestamp: now, isNew: true, thoughts: (resultData as any).thoughts || [], parentConversation: newConvForExec };
              
              setConversation(prev => {
-                const currentConv = [...prev]; // Make a new mutable copy
+                const currentConv = [...prev]; 
                 const insertAtIndex = currentConv.findIndex(b => b.id === blockId);
                 if (insertAtIndex !== -1) {
                     currentConv.splice(insertAtIndex + 1, 0, blockToAdd);
@@ -738,7 +762,7 @@ function App() {
              });
         }
     }
-  }, [runAsAdmin, conversation, sendApiRequest, editingBlockId, currentEditingCode, addThoughtsAndResultToConversation]);
+  }, [runAsAdmin, conversation, sendApiRequest, editingBlockId, currentEditingCode]);
 
 
   const handleDebug = useCallback(async (codeToDebugFromExecResult: string | null, lastExecutionResult: ExecutionResult | null, blockIdOfExecution: string) => {
@@ -803,7 +827,8 @@ function App() {
                file_type: fileTypeToSend,
            };
            const data: DebugResult = await sendApiRequest('debug', payload) as DebugResult;
-           addThoughtsAndResultToConversation(loadingId, data as ApiResponseWithThoughts, 'debug', d => d);
+           const debugDataWithOrigin = { ...data, originalExecutionBlockId: blockIdOfExecution };
+           addThoughtsAndResultToConversation(loadingId, debugDataWithOrigin as ApiResponseWithThoughts, 'debug', d => d);
            toast.success("Đã phân tích gỡ rối!");
        } catch (err: any) {
            const errorData: DebugResult = { explanation: null, corrected_code: null, error: err.message };
@@ -844,8 +869,6 @@ function App() {
      
      const debugBlock = conversation.find(b => b.id === originalDebugBlockId);
      const fullConversationContext = debugBlock?.parentConversation || conversation;
-     const originalBlockIndex = fullConversationContext.findIndex(b => b.id === originalDebugBlockId);
-     // No loading block for install, add result directly
      
      let resultData : InstallationResult | null = null;
 
@@ -870,7 +893,7 @@ function App() {
               const blockToAdd: ConversationBlock = { type: 'installation', data: resultData, id: installBlockId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContext };
               
               setConversation(prev => {
-                  const currentConv = [...prev]; // Use the most recent state for prev
+                  const currentConv = [...prev]; 
                   const insertAtIndex = currentConv.findIndex(b => b.id === originalDebugBlockId);
                   if (insertAtIndex !== -1) {
                       currentConv.splice(insertAtIndex + 1, 0, blockToAdd);
@@ -884,14 +907,80 @@ function App() {
   }, [conversation]);
 
   const handleExplain = useCallback(async (blockId: string, contentToExplain: any, context: string) => {
-    const blockToExplain = conversation.find(b => b.id === blockId);
-    const fullConversationContext = blockToExplain?.parentConversation || conversation;
-    const fileTypeToSend = (context === 'code') ? blockToExplain?.generatedType : undefined;
+    const blockBeingExplained = conversation.find(b => b.id === blockId);
+    const fullConversationContext = blockBeingExplained?.parentConversation || conversation;
+
+    let originalUserPrompt: string | undefined;
+    let executedCodeOrCommand: string | undefined;
+    let fileTypeForPrompt: string | undefined = (context === 'code' || (context === 'execution_result' && (contentToExplain as ExecutionResult)?.executed_file_type))
+                                               ? (blockBeingExplained?.generatedType || (contentToExplain as ExecutionResult)?.executed_file_type)
+                                               : undefined;
+    if (context === 'debug_result') {
+        fileTypeForPrompt = (contentToExplain as DebugResult)?.original_language;
+    }
+
+
+    const blockIndex = fullConversationContext.findIndex(b => b.id === blockId);
+
+    if (blockIndex > -1) {
+        let searchStartIndex = blockIndex;
+        if (['execution_result', 'debug_result', 'review_text', 'installation_result', 'explanation'].includes(context)) {
+            for (let i = blockIndex - 1; i >= 0; i--) {
+                if (fullConversationContext[i].type === 'ai-code' || fullConversationContext[i].type === 'user') {
+                    searchStartIndex = i;
+                    break;
+                }
+            }
+        }
+
+        for (let i = searchStartIndex; i >= 0; i--) {
+            if (fullConversationContext[i].type === 'user') {
+                originalUserPrompt = fullConversationContext[i].data as string;
+                break; 
+            }
+        }
+
+        if (context === 'execution_result') {
+            executedCodeOrCommand = (contentToExplain as ExecutionResult)?.codeThatFailed;
+            if (!fileTypeForPrompt) fileTypeForPrompt = (contentToExplain as ExecutionResult)?.executed_file_type;
+        } else if (context === 'code') {
+            if (editingBlockId === blockId && currentEditingCode !== null) {
+                executedCodeOrCommand = currentEditingCode;
+            } else {
+                executedCodeOrCommand = contentToExplain as string;
+            }
+            if (!fileTypeForPrompt && blockBeingExplained?.type === 'ai-code') {
+                fileTypeForPrompt = blockBeingExplained.generatedType;
+            }
+        } else if (context === 'debug_result') {
+            const debugData = contentToExplain as DebugResult;
+            const execBlockId = debugData?.originalExecutionBlockId; 
+            if (execBlockId) {
+                const execBlock = fullConversationContext.find(b => b.id === execBlockId && b.type === 'execution');
+                if (execBlock) {
+                    executedCodeOrCommand = (execBlock.data as ExecutionResult)?.codeThatFailed;
+                     if (!fileTypeForPrompt) fileTypeForPrompt = (execBlock.data as ExecutionResult)?.executed_file_type;
+                }
+            }
+            if (!fileTypeForPrompt) fileTypeForPrompt = debugData.original_language;
+        } else if (context === 'error_message' && blockBeingExplained) {
+            if (blockIndex > 0 && fullConversationContext[blockIndex - 1].type === 'ai-code') {
+                 const prevBlock = fullConversationContext[blockIndex - 1];
+                 if (editingBlockId === prevBlock.id && currentEditingCode !== null) {
+                    executedCodeOrCommand = currentEditingCode;
+                 } else {
+                    executedCodeOrCommand = prevBlock.data as string;
+                 }
+                 fileTypeForPrompt = prevBlock.generatedType;
+            }
+        }
+    }
+
 
     setIsExplaining(true);
     const now = new Date().toISOString();
     const loadingId = Date.now().toString() + '_explload';
-    const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích...`, id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContext };
+    const loadingBlock: ConversationBlock = { type: 'loading', data: `Đang giải thích ${context}...`, id: loadingId, timestamp: now, isNew: true, thoughts: [], parentConversation: fullConversationContext };
     const originalBlockIndex = fullConversationContext.findIndex(b => b.id === blockId);
     
     const newConvWithLoading = [...fullConversationContext];
@@ -899,27 +988,27 @@ function App() {
     else newConvWithLoading.push(loadingBlock);
     setConversation(newConvWithLoading.map(b => ({ ...b, parentConversation: newConvWithLoading })));
 
-    let processedContent = contentToExplain;
+    let processedContentForApi = contentToExplain;
     if (context === 'code' && editingBlockId === blockId && currentEditingCode !== null) {
-        processedContent = currentEditingCode;
-    } else if (typeof contentToExplain === 'object' && contentToExplain !== null) {
-        try {
-            let contentToSend = { ...contentToExplain };
-            if ((context === 'execution_result' || context === 'debug_result') && 'codeThatFailed' in contentToSend) {
-                delete contentToSend.codeThatFailed;
-            }
-            processedContent = JSON.stringify(contentToSend, null, 2);
-        } catch { processedContent = String(contentToExplain); }
+        processedContentForApi = currentEditingCode;
+    } else if (typeof contentToExplain === 'object' && contentToExplain !== null && !Array.isArray(contentToExplain)) { 
+        processedContentForApi = { ...contentToExplain }; 
+        if ((context === 'execution_result' || context === 'debug_result') && 'codeThatFailed' in processedContentForApi) {
+            delete processedContentForApi.codeThatFailed;
+        }
     } else {
-        processedContent = String(contentToExplain);
+        processedContentForApi = String(contentToExplain);
     }
+
 
     try {
         const payload:any = {
-            content: processedContent,
+            content: processedContentForApi, 
             context,
+            file_type: fileTypeForPrompt, 
+            original_user_prompt: originalUserPrompt,
+            executed_code_or_command: executedCodeOrCommand,
         };
-        if (fileTypeToSend) payload.file_type = fileTypeToSend;
 
         const data: ExplainResult = await sendApiRequest('explain', payload) as ExplainResult;
         addThoughtsAndResultToConversation(loadingId, data as ApiResponseWithThoughts, 'explanation', d => d);

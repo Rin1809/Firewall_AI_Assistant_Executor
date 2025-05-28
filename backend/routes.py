@@ -7,9 +7,9 @@ import re
 import json
 from datetime import datetime
 from flask import request, jsonify, Blueprint, current_app
-import logging # Ensure logging is imported for isinstance check
-import logging.handlers # Ensure handlers are imported for isinstance check
-import glob # For finding the latest log file if needed, though current setup is one file.
+import logging # Import logging
+import logging.handlers # Import handlers
+import glob
 
 
 import google.generativeai as genai
@@ -34,13 +34,22 @@ AVAILABLE_TOOLS = [{
     "function_declarations": [
         {
             "name": "get_fortigate_data",
-            "description": "Lấy thông tin cấu hình hoặc trạng thái cụ thể từ FortiGate bằng cách chạy một lệnh FortiOS CLI (ví dụ: 'show ...', 'get ...', 'diagnose ...'). Chỉ sử dụng cho các lệnh không thay đổi cấu hình. Không dùng để tạo, sửa, xóa cấu hình.",
+            "description": (
+                "Lấy thông tin cấu hình hoặc trạng thái cụ thể từ FortiGate bằng cách chạy các lệnh FortiOS CLI "
+                "không làm thay đổi cấu hình. Rất hữu ích để thu thập dữ liệu cho việc phân tích, gỡ lỗi, hoặc trả lời câu hỏi. "
+                "Ví dụ các lệnh được hỗ trợ: 'show system interface port1', 'get router info routing-table all', "
+                "'diagnose debug flow show console enable', 'diagnose sniffer packet any 'host 1.2.3.4' 4 0 l', "
+                "'show full-configuration firewall policy 123', 'get system performance status', 'show log disk display'. " # Them vd diagnose
+                "Chỉ sử dụng cho các lệnh đọc thông tin (read-only). "
+                "KHÔNG sử dụng tool này cho các lệnh thay đổi cấu hình như 'config ...', 'edit ...', 'set ...', 'delete ...', 'append ...', "
+                "hoặc các lệnh nguy hiểm như 'execute formatlogdisk', 'execute reboot'."
+            ),
             "parameters": {
                 "type_": "OBJECT",
                 "properties": {
                     "command": {
                         "type_": "STRING",
-                        "description": "Lệnh FortiOS CLI cần thực thi để lấy thông tin. Ví dụ: 'show system interface port1', 'get router info routing-table all'."
+                        "description": "Lệnh FortiOS CLI (show, get, diagnose, ...) cần thực thi để lấy thông tin. Ví dụ: 'show system interface port1', 'diagnose sys top'."
                     }
                 },
                 "required": ["command"]
@@ -131,10 +140,12 @@ def handle_generate():
             file_type_input,
             fortigate_context_data=initial_fortigate_context_str
         )
-        if "get_fortigate_data" not in full_prompt_for_gemini:
-             # Them huong dan neu tool get_fortigate_data chua co trong prompt mac dinh
-             full_prompt_for_gemini += "\n\nQuan trọng: Nếu bạn cần thêm thông tin cấu hình hiện tại của FortiGate để hoàn thành yêu cầu, hãy sử dụng tool `get_fortigate_data` để chạy các lệnh 'show', 'get', hoặc 'diagnose' cần thiết. Chỉ sử dụng tool này cho các lệnh không thay đổi cấu hình."
-        # Huong dan AI tu retry khi gap loi tool (nghe loi ma thu lai ngay)
+        # Huong dan AI su dung tool get_fortigate_data
+        full_prompt_for_gemini += (
+            "\n\nQuan trọng: Nếu bạn cần thêm thông tin cấu hình, trạng thái, log hoặc kết quả chẩn đoán (diagnose) hiện tại của FortiGate " # Them diagnose
+            "để hoàn thành yêu cầu, hãy sử dụng tool `get_fortigate_data`. Bạn có thể gọi tool này nhiều lần với các lệnh 'show', 'get', "
+            "hoặc 'diagnose' khác nhau nếu cần. Chỉ sử dụng tool này cho các lệnh không thay đổi cấu hình."
+        )
         full_prompt_for_gemini += "\n**QUAN TRỌNG:** Nếu một lệnh thực thi qua tool `get_fortigate_data` trả về lỗi, bạn phải **NGAY LẬP TỨC** phân tích lỗi đó và thử lại tool `get_fortigate_data` với lệnh đã sửa đổi hoặc điều chỉnh cách tiếp cận. **KHÔNG** giải thích lỗi hoặc thông báo kế hoạch của bạn cho đến khi bạn đã thử lại tool và có kết quả mới. Mục tiêu là hoàn thành yêu cầu bằng cách thực thi lệnh tool thành công."
 
         genai_api_key_to_use = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
@@ -148,7 +159,6 @@ def handle_generate():
             return jsonify({"error": f"Lỗi cấu hình thư viện Google GenAI: {e_cfg_genai}", "thoughts": []}), 500
 
         gemini_model_name = model_config.get('model_name', 'gemini-1.5-flash')
-        # Su dung genai.types neu GenerationConfig, SafetySetting, HarmCategory gay loi import
         try:
             generation_config_obj = GenerationConfig(
                 temperature=float(model_config.get('temperature', 0.7)),
@@ -161,18 +171,14 @@ def handle_generate():
             safety_settings_list = []
             for setting in safety_settings_config:
                 category_name = setting['category'].replace("HARM_CATEGORY_", "")
-                # Su dung genai.types.HarmCategory
-                if hasattr(genai.types.HarmCategory, category_name): # Ktra HarmCategory tu genai.types
+                if hasattr(genai.types.HarmCategory, category_name): 
                     category_enum = getattr(genai.types.HarmCategory, category_name)
-                    # Su dung genai.types.SafetySetting.HarmBlockThreshold
                     threshold_enum = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
-                    # Su dung genai.types.SafetySetting
                     safety_settings_list.append(genai.types.SafetySetting(category=category_enum, threshold=threshold_enum))
                 else:
                     logger.warning(f"Bo qua safety setting voi category khong hop le: {setting['category']}")
         except AttributeError as e_types_attr:
              logger.error(f"Loi AttributeError khi truy cap GenConfig/Safety/HarmCategory tu google.generativeai.types: {e_types_attr}. Thu import truc tiep tu genai.types")
-             # Fallback to genai.types if direct import failed or attributes are not found
              generation_config_obj = genai.types.GenerationConfig(
                 temperature=float(model_config.get('temperature', 0.7)),
                 top_p=float(model_config.get('top_p', 0.95)),
@@ -236,7 +242,6 @@ def handle_generate():
                         logger.info(f"Tool '{tool_name}': Executing command '{fgt_command_to_run}'")
                         exec_result = execute_fortigate_commands(fgt_command_to_run, fortigate_config_from_request)
                         if exec_result["error"]:
-                            # Dinh dang ro rang hon de AI phan tich loi
                             tool_response_text = f"[LỖI THỰC THI FORTIGATE]: Lệnh '{fgt_command_to_run}' thất bại. Chi tiết: {exec_result['error']}. Output: {exec_result['output']}"
                             tool_error_flag = True
                         else:
@@ -260,9 +265,6 @@ def handle_generate():
                     }
                 }]
             else:
-                # Ktra finish_reason bang name hoac so sanh voi enum tu genai.types
-                # genai.types.FinishReason.STOP (neu FinishReason van import dc tu genai.types)
-                # hoac candidate.finish_reason.name == "STOP"
                 finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
                 if finish_reason_name == "STOP":
                     final_text_response = "".join(part_item.text for part_item in candidate.content.parts if hasattr(part_item, 'text') and part_item.text)
@@ -366,7 +368,6 @@ def handle_review():
         status_code = 400
     else:
         status_code = 500
-    # FIX: Doi toan tu JS '||' sang Python 'or'
     return jsonify({"error": review_text or "Lỗi không xác định khi đánh giá."}), status_code
 
 @api_bp.route('/execute', methods=['POST'])
@@ -574,10 +575,14 @@ def handle_explain():
     logger = current_app.logger
     data = request.get_json()
     content_to_explain_input = data.get('content')
-    context = data.get('context', 'unknown')
+    context = data.get('context', 'unknown') 
     raw_model_config_from_request = data.get('model_config', {})
     model_config = _normalize_model_config(raw_model_config_from_request)
-    file_type_for_code_context = data.get('file_type')
+
+    file_type_for_code_context = data.get('file_type') 
+    original_user_prompt = data.get('original_user_prompt')
+    executed_code_or_command = data.get('executed_code_or_command')
+
 
     if not content_to_explain_input:
         return jsonify({"error": "Không có nội dung để giải thích."}), 400
@@ -588,12 +593,27 @@ def handle_explain():
          except Exception: content_to_explain_str = str(content_to_explain_input)
     else: content_to_explain_str = str(content_to_explain_input)
 
+
     language_for_prompt = None
     if context == 'code' and file_type_for_code_context:
         language_for_prompt = file_type_for_code_context.split('.')[-1].lower() if '.' in file_type_for_code_context else file_type_for_code_context.lower()
-        if not language_for_prompt: language_for_prompt = 'txt'
+        if not language_for_prompt: language_for_prompt = 'txt' 
+    elif context == 'execution_result' or context == 'debug_result':
+        if isinstance(content_to_explain_input, dict):
+            lang_from_exec = content_to_explain_input.get('executed_file_type') 
+            if not lang_from_exec:
+                lang_from_exec = content_to_explain_input.get('original_language') 
+            if lang_from_exec:
+                language_for_prompt = lang_from_exec
 
-    full_prompt = create_explain_prompt(content_to_explain_str, context, language=language_for_prompt)
+
+    full_prompt = create_explain_prompt(
+        content_to_explain_str,
+        context,
+        language=language_for_prompt,
+        original_user_prompt=original_user_prompt,
+        executed_code_or_command=executed_code_or_command
+    )
     explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
 
     if explanation_text and not explanation_text.startswith("Lỗi"):
@@ -604,7 +624,6 @@ def handle_explain():
     if explanation_text and ("Lỗi cấu hình" in explanation_text or "Lỗi: Phản hồi bị chặn" in explanation_text):
         status_code = 400
     else: status_code = 500
-    # FIX: Doi toan tu JS '||' sang Python 'or'
     return jsonify({"error": explanation_text or "Lỗi không xác định khi giải thích."}), status_code
 
 @api_bp.route('/fortigate_chat', methods=['POST'])
@@ -626,7 +645,6 @@ def handle_fortigate_chat():
     logger.info("FortiGate Chat: Bat dau xu ly voi Function Calling.")
     if not fortigate_config_from_request or not fortigate_config_from_request.get('ipHost') or not fortigate_config_from_request.get('username'):
         logger.warning("FortiGate Chat (FC): Thieu IP/Host hoac Username FortiGate.")
-        # return jsonify({"error": "Lỗi: Thiếu IP/Host hoặc Username cho FortiGate trong Cài đặt. AI không thể lấy thông tin.", "thoughts": []}), 400
 
     initial_fortigate_context_str = "Thông tin ngữ cảnh FortiGate không thể lấy do thiếu cấu hình hoặc lỗi kết nối."
     if fortigate_config_from_request and fortigate_config_from_request.get('ipHost') and fortigate_config_from_request.get('username'):
@@ -641,10 +659,11 @@ def handle_fortigate_chat():
 
     HISTORY_LIMIT_CHAT = 8000
     FGT_CTX_LIMIT_CHAT = 6000
-
+    
+    # Huong dan AI dung tool get_fortigate_data cho chat
     system_instruction_for_chat = f"""Bạn là một trợ lý AI chuyên gia về FortiGate.
 Nhiệm vụ của bạn là trả lời câu hỏi của người dùng dựa trên kiến thức của bạn, thông tin ngữ cảnh FortiGate được cung cấp, và lịch sử hội thoại.
-Nếu bạn cần thêm thông tin cấu hình hoặc trạng thái hiện tại của FortiGate để trả lời chính xác, hãy sử dụng tool `get_fortigate_data` để chạy các lệnh 'show', 'get', hoặc 'diagnose'.
+Nếu bạn cần thêm thông tin chi tiết về cấu hình, trạng thái, logs, hoặc kết quả chẩn đoán (diagnose) từ FortiGate để trả lời chính xác, hãy sử dụng tool `get_fortigate_data`. Tool này cho phép bạn chạy bất kỳ lệnh 'show', 'get', hoặc 'diagnose' nào không làm thay đổi cấu hình. Bạn có thể gọi tool này nhiều lần nếu cần thiết.
 KHÔNG tạo ra các khối mã lệnh mới trừ khi người dùng YÊU CẦU RÕ RÀNG trong câu hỏi hiện tại của họ là "tạo lệnh", "viết script", "generate config".
 Nếu người dùng chỉ hỏi thông tin, giải thích, hoặc gợi ý sửa lỗi, hãy cung cấp câu trả lời dưới dạng văn bản.
 Sử dụng Markdown cho câu trả lời của bạn. Bắt đầu trực tiếp bằng câu trả lời, không thêm lời dẫn.
@@ -660,9 +679,9 @@ Lịch sử hội thoại gần đây (nếu có):
 </conversation_history_start>
 
 Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
+
+**QUAN TRỌNG (Retry Tool):** Nếu một lệnh thực thi qua tool `get_fortigate_data` trả về lỗi hoặc không đủ thông tin, bạn phải **NGAY LẬP TỨC** phân tích lỗi đó và thử lại tool `get_fortigate_data` với lệnh đã sửa đổi hoặc một lệnh khác phù hợp hơn. **KHÔNG** giải thích lỗi hoặc thông báo kế hoạch của bạn cho đến khi bạn đã thử lại tool và có kết quả mới, hoặc khi bạn đã thử nhiều cách mà vẫn không được. Mục tiêu là hoàn thành yêu cầu bằng cách thực thi lệnh tool thành công hoặc cung cấp câu trả lời hữu ích dựa trên thông tin tool thu được.
 """
-    # Huong dan AI tu retry khi gap loi tool trong chat mode (nghe loi ma thu lai ngay)
-    system_instruction_for_chat += "\n**QUAN TRỌNG:** Nếu một lệnh thực thi qua tool `get_fortigate_data` trả về lỗi, bạn phải **NGAY LẬP TỨC** phân tích lỗi đó và thử lại tool `get_fortigate_data` với lệnh đã sửa đổi hoặc điều chỉnh cách tiếp cận. **KHÔNG** giải thích lỗi hoặc thông báo kế hoạch của bạn cho đến khi bạn đã thử lại tool và có kết quả mới. Mục tiêu là hoàn thành yêu cầu bằng cách thực thi lệnh tool thành công hoặc cung cấp câu trả lời hữu ích dựa trên thông tin tool thu được."
 
 
     genai_api_key_to_use_chat = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
@@ -676,7 +695,6 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
         return jsonify({"error": f"Lỗi cấu hình thư viện Google GenAI: {e_cfg_genai_chat}", "thoughts": []}), 500
 
     gemini_model_name_chat = model_config.get('model_name', 'gemini-1.5-flash')
-    # Su dung genai.types cho GenerationConfig, SafetySetting, HarmCategory
     try:
         generation_config_obj_chat = GenerationConfig(
             temperature=float(model_config.get('temperature', 0.7)),
@@ -688,7 +706,7 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
         safety_settings_list_chat = []
         for setting in safety_settings_config_chat:
             category_name_chat = setting['category'].replace("HARM_CATEGORY_", "")
-            if hasattr(genai.types.HarmCategory, category_name_chat): # Ktra HarmCategory tu genai.types
+            if hasattr(genai.types.HarmCategory, category_name_chat): 
                 category_enum_chat = getattr(genai.types.HarmCategory, category_name_chat)
                 threshold_enum_chat = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
                 safety_settings_list_chat.append(genai.types.SafetySetting(category=category_enum_chat, threshold=threshold_enum_chat))
@@ -763,7 +781,6 @@ Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
                     else:
                         exec_res_chat = execute_fortigate_commands(fgt_cmd_chat, fortigate_config_from_request)
                         if exec_res_chat["error"]:
-                            # Dinh dang ro rang hon de AI phan tich loi
                             tool_response_text_chat = f"[LỖI THỰC THI FORTIGATE]: Lệnh '{fgt_cmd_chat}' thất bại. Chi tiết: {exec_res_chat['error']}. Output: {exec_res_chat['output']}"
                             tool_error_flag_chat = True
                         else:
@@ -815,7 +832,7 @@ def get_backend_logs():
     if hasattr(logger, 'handlers'):
         for handler in logger.handlers:
             if isinstance(handler, logging.handlers.RotatingFileHandler) or isinstance(handler, logging.FileHandler):
-                if hasattr(handler, 'baseFilename') and handler.baseFilename: # Check if baseFilename is not None or empty
+                if hasattr(handler, 'baseFilename') and handler.baseFilename: 
                     log_file_path_from_app = handler.baseFilename
                     break
     
