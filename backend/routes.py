@@ -5,8 +5,13 @@ import subprocess
 import shlex
 import re
 import json
-
+from datetime import datetime
 from flask import request, jsonify, Blueprint, current_app
+
+import google.generativeai as genai
+from google.generativeai.types import GenerationConfig, SafetySettingDict, HarmCategory
+from google.generativeai import GenerativeModel
+
 from .helpers import get_os_name, get_language_name
 from .prompt_utils import (
     create_prompt, create_review_prompt,
@@ -15,49 +20,51 @@ from .prompt_utils import (
 from .gemini_utils import generate_response_from_gemini
 from .execution_utils import (
     extract_code_block, execute_fortigate_commands,
-    execute_local_script, fetch_and_save_fortigate_context
+    execute_local_script, fetch_and_save_fortigate_context,
+    DEFAULT_FORTIGATE_CONTEXT_COMMANDS
 )
 
 api_bp = Blueprint('api', __name__, url_prefix='/api')
 
+AVAILABLE_TOOLS = [{
+    "function_declarations": [
+        {
+            "name": "get_fortigate_data",
+            "description": "Lấy thông tin cấu hình hoặc trạng thái cụ thể từ FortiGate bằng cách chạy một lệnh FortiOS CLI (ví dụ: 'show ...', 'get ...', 'diagnose ...'). Chỉ sử dụng cho các lệnh không thay đổi cấu hình. Không dùng để tạo, sửa, xóa cấu hình.",
+            "parameters": {
+                "type_": "OBJECT",
+                "properties": {
+                    "command": {
+                        "type_": "STRING",
+                        "description": "Lệnh FortiOS CLI cần thực thi để lấy thông tin. Ví dụ: 'show system interface port1', 'get router info routing-table all'."
+                    }
+                },
+                "required": ["command"]
+            }
+        },
+    ]
+}]
+
+
 def _normalize_model_config(raw_config: dict) -> dict:
-    """
-    Chuan hoa model_cfg tu FE (camelCase) -> snake_case cho BE.
-    Dam bao kieu so dung.
-    """
     if not isinstance(raw_config, dict):
-        return {} # Tra dict rong de gemini_utils dung default
-
+        return {}
     normalized = {}
-
-    # Model name
-    normalized['model_name'] = raw_config.get('modelName', raw_config.get('model_name')) # Lay ca 2 case
-
-    # Temperature
+    normalized['model_name'] = raw_config.get('modelName', raw_config.get('model_name'))
     temp = raw_config.get('temperature')
     if temp is not None:
         try: normalized['temperature'] = float(temp)
-        except (ValueError, TypeError): pass # Bo qua neu ko parse dc
-
-    # Top P
+        except (ValueError, TypeError): pass
     top_p_val = raw_config.get('topP', raw_config.get('top_p'))
     if top_p_val is not None:
         try: normalized['top_p'] = float(top_p_val)
         except (ValueError, TypeError): pass
-
-    # Top K
     top_k_val = raw_config.get('topK', raw_config.get('top_k'))
     if top_k_val is not None:
         try: normalized['top_k'] = int(top_k_val)
         except (ValueError, TypeError): pass
-
-    # Safety Setting
     normalized['safety_setting'] = raw_config.get('safetySetting', raw_config.get('safety_setting'))
-
-    # API Key (thuong da la snake_case tu FE khi truyen qua body)
     normalized['api_key'] = raw_config.get('api_key')
-
-    # Loai bo key None de .get(key, default) cua gemini_utils hdong dung
     return {k: v for k, v in normalized.items() if v is not None}
 
 
@@ -65,16 +72,17 @@ def _normalize_model_config(raw_config: dict) -> dict:
 def handle_generate():
     logger = current_app.logger
     data = request.get_json()
-    user_input = data.get('prompt')
+    user_input_prompt_str = data.get('prompt')
     raw_model_config_from_request = data.get('model_config', {})
-    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
+    model_config = _normalize_model_config(raw_model_config_from_request)
     target_os_input = data.get('target_os', 'auto')
     file_type_input = data.get('file_type', 'py')
     fortigate_config_from_request = data.get('fortigate_config')
-    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
+    fortigate_selected_context_commands = data.get('fortigate_selected_context_commands', DEFAULT_FORTIGATE_CONTEXT_COMMANDS)
+    if not fortigate_selected_context_commands:
+        fortigate_selected_context_commands = DEFAULT_FORTIGATE_CONTEXT_COMMANDS
 
-
-    if not user_input:
+    if not user_input_prompt_str:
         return jsonify({"error": "Vui lòng nhập yêu cầu."}), 400
 
     backend_os_name = get_os_name()
@@ -85,41 +93,213 @@ def handle_generate():
         file_extension = file_type_input.split('.')[-1].lower()
     else:
         file_extension = file_type_input.lower()
-
     if not file_extension or not (file_extension.isalnum() or file_extension == 'fortios'):
         file_extension = 'py'
 
-    fortigate_context_str = None
-    is_fortigate_related_request = (
+    is_fortios_interactive_generate = (
+        target_os_name.lower() == 'fortios' and
+        (file_extension == 'fortios' or (file_type_input and "fortios" in file_type_input.lower()))
+    )
+
+    if is_fortios_interactive_generate:
+        logger.info("Generate FGT (Interactive Mode): Bat dau xu ly voi Function Calling.")
+        if not fortigate_config_from_request or not fortigate_config_from_request.get('ipHost') or not fortigate_config_from_request.get('username'):
+            logger.warning("Generate FGT (FC): Thieu IP/Host hoac Username FortiGate trong Settings.")
+            return jsonify({
+                "error": "Lỗi: Thiếu IP/Host hoặc Username cho FortiGate trong Cài đặt. AI không thể lấy thông tin để tạo lệnh chính xác.",
+                "thoughts": []
+            }), 400
+
+        initial_fortigate_context_str = "Thông tin ngữ cảnh FortiGate không thể lấy do lỗi cấu hình hoặc kết nối."
+        try:
+            initial_fortigate_context_str = fetch_and_save_fortigate_context(
+                fortigate_config_from_request,
+                commands_to_fetch=fortigate_selected_context_commands
+            )
+        except Exception as e_ctx:
+            logger.error(f"Generate FGT (FC): Loi khi lay ngu canh ban dau: {e_ctx}")
+            initial_fortigate_context_str = f"Lưu ý: Lỗi khi lấy ngữ cảnh FortiGate ban đầu: {str(e_ctx)}"
+
+        full_prompt_for_gemini = create_prompt(
+            user_input_prompt_str,
+            backend_os_name,
+            target_os_name,
+            file_type_input,
+            fortigate_context_data=initial_fortigate_context_str
+        )
+        if "get_fortigate_data" not in full_prompt_for_gemini:
+             full_prompt_for_gemini += "\n\nQuan trọng: Nếu bạn cần thêm thông tin cấu hình hiện tại của FortiGate để hoàn thành yêu cầu, hãy sử dụng tool `get_fortigate_data` để chạy các lệnh 'show', 'get', hoặc 'diagnose' cần thiết. Chỉ sử dụng tool này cho các lệnh không thay đổi cấu hình."
+
+        genai_api_key_to_use = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
+        if not genai_api_key_to_use:
+            return jsonify({"error": "API Key của Google chưa được cấu hình.", "thoughts": []}), 500
+        try:
+            genai.configure(api_key=genai_api_key_to_use)
+            logger.info(f"Generate FGT (FC): Da (lai) cau hinh GenAI voi key {'tu UI' if model_config.get('api_key') else 'tu .env'}.")
+        except Exception as e_cfg_genai:
+            logger.error(f"Loi cau hinh GenAI (FC): {e_cfg_genai}")
+            return jsonify({"error": f"Lỗi cấu hình thư viện Google GenAI: {e_cfg_genai}", "thoughts": []}), 500
+
+        gemini_model_name = model_config.get('model_name', 'gemini-1.5-flash')
+        # Su dung genai.types neu GenerationConfig, SafetySetting, HarmCategory gay loi import
+        try:
+            generation_config_obj = GenerationConfig(
+                temperature=float(model_config.get('temperature', 0.7)),
+                top_p=float(model_config.get('top_p', 0.95)),
+                top_k=int(model_config.get('top_k', 40))
+            )
+            safety_setting_key = model_config.get('safety_setting', 'BLOCK_MEDIUM_AND_ABOVE')
+            safety_settings_config = current_app.config.get('SAFETY_SETTINGS_MAP', {}).get(safety_setting_key, [])
+            
+            safety_settings_list = []
+            for setting in safety_settings_config:
+                category_name = setting['category'].replace("HARM_CATEGORY_", "")
+                # Su dung genai.types.HarmCategory
+                if hasattr(genai.types.HarmCategory, category_name): # Ktra HarmCategory tu genai.types
+                    category_enum = getattr(genai.types.HarmCategory, category_name)
+                    # Su dung genai.types.SafetySetting.HarmBlockThreshold
+                    threshold_enum = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
+                    # Su dung genai.types.SafetySetting
+                    safety_settings_list.append(genai.types.SafetySetting(category=category_enum, threshold=threshold_enum))
+                else:
+                    logger.warning(f"Bo qua safety setting voi category khong hop le: {setting['category']}")
+        except AttributeError as e_types_attr:
+             logger.error(f"Loi AttributeError khi truy cap GenConfig/Safety/HarmCategory tu google.generativeai.types: {e_types_attr}. Thu import truc tiep tu genai.types")
+             # Fallback to genai.types if direct import failed or attributes are not found
+             generation_config_obj = genai.types.GenerationConfig(
+                temperature=float(model_config.get('temperature', 0.7)),
+                top_p=float(model_config.get('top_p', 0.95)),
+                top_k=int(model_config.get('top_k', 40))
+             )
+             safety_setting_key = model_config.get('safety_setting', 'BLOCK_MEDIUM_AND_ABOVE')
+             safety_settings_config = current_app.config.get('SAFETY_SETTINGS_MAP', {}).get(safety_setting_key, [])
+             safety_settings_list = []
+             for setting in safety_settings_config:
+                category_name = setting['category'].replace("HARM_CATEGORY_", "")
+                if hasattr(genai.types.HarmCategory, category_name):
+                    category_enum = getattr(genai.types.HarmCategory, category_name)
+                    threshold_enum = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
+                    safety_settings_list.append(genai.types.SafetySetting(category=category_enum, threshold=threshold_enum))
+                else:
+                    logger.warning(f"Bo qua safety setting (fallback) voi category khong hop le: {setting['category']}")
+
+        model_for_fc = GenerativeModel(gemini_model_name, tools=AVAILABLE_TOOLS)
+        chat_session = model_for_fc.start_chat(history=[])
+        thoughts_for_ui = []
+        MAX_FUNCTION_CALLS = 5
+        num_calls = 0
+        current_content_for_send_message: str | list[dict] = full_prompt_for_gemini
+
+        while num_calls < MAX_FUNCTION_CALLS:
+            logger.info(f"Generate FGT (FC Loop {num_calls+1}/{MAX_FUNCTION_CALLS}): Sending to Gemini...")
+            response = chat_session.send_message(
+                content=current_content_for_send_message,
+                generation_config=generation_config_obj,
+                safety_settings=safety_settings_list
+            )
+            candidate = response.candidates[0]
+
+            if not candidate.content or not candidate.content.parts:
+                 logger.error("Generate FGT (FC): Phan hoi cua AI khong co content hoac parts.")
+                 return jsonify({"error": "AI trả về phản hồi không hợp lệ (không có content hoặc parts).", "thoughts": thoughts_for_ui}), 500
+
+            function_call_part = None
+            for part_item in candidate.content.parts:
+                if hasattr(part_item, 'function_call') and part_item.function_call: 
+                    function_call_part = part_item.function_call
+                    break
+            
+            if function_call_part:
+                fc = function_call_part
+                tool_name = fc.name
+                tool_args = dict(fc.args) if fc.args else {}
+                current_ts = datetime.now().isoformat()
+                logger.info(f"Generate FGT (FC): AI requested tool '{tool_name}' with args: {tool_args}")
+                thoughts_for_ui.append({
+                    "type": "function_call_request", "tool_name": tool_name,
+                    "tool_args": tool_args, "timestamp": current_ts
+                })
+
+                tool_response_text = ""
+                tool_error_flag = False
+
+                if tool_name == "get_fortigate_data":
+                    fgt_command_to_run = tool_args.get("command")
+                    if fgt_command_to_run:
+                        logger.info(f"Tool '{tool_name}': Executing command '{fgt_command_to_run}'")
+                        exec_result = execute_fortigate_commands(fgt_command_to_run, fortigate_config_from_request)
+                        if exec_result["error"]:
+                            tool_response_text = f"Lỗi khi chạy lệnh '{fgt_command_to_run}': {exec_result['error']}. Output (nếu có): {exec_result['output']}"
+                            tool_error_flag = True
+                        else:
+                            tool_response_text = exec_result["output"] if exec_result["output"] else "(Lệnh không trả về output)"
+                    else:
+                        tool_response_text = "Lỗi: Tool 'get_fortigate_data' được gọi nhưng thiếu tham số 'command'."
+                        tool_error_flag = True
+                else:
+                    tool_response_text = f"Lỗi: Tool '{tool_name}' không được backend hỗ trợ."
+                    tool_error_flag = True
+                
+                thoughts_for_ui.append({
+                    "type": "function_call_result", "tool_name": tool_name,
+                    "result_data": tool_response_text, "is_error": tool_error_flag,
+                    "timestamp": datetime.now().isoformat()
+                })
+                current_content_for_send_message = [{
+                    "function_response": {
+                        "name": tool_name,
+                        "response": {"output": tool_response_text} 
+                    }
+                }]
+            else:
+                # Ktra finish_reason bang name hoac so sanh voi enum tu genai.types
+                # genai.types.FinishReason.STOP (neu FinishReason van import dc tu genai.types)
+                # hoac candidate.finish_reason.name == "STOP"
+                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                if finish_reason_name == "STOP":
+                    final_text_response = "".join(part_item.text for part_item in candidate.content.parts if hasattr(part_item, 'text') and part_item.text)
+                    logger.info(f"Generate FGT (FC): AI final response (text): {final_text_response[:200]}...")
+                    generated_code = extract_code_block(final_text_response, 'fortios', user_input_prompt_str)
+                    return jsonify({"code": generated_code, "generated_for_type": "fortios", "thoughts": thoughts_for_ui})
+                else:
+                    safety_ratings_str = str(getattr(candidate, 'safety_ratings', 'N/A'))
+                    error_msg_fc_loop = f"AI không trả về function call hoặc text cuối cùng. Lý do: {finish_reason_name}. Safety: {safety_ratings_str}"
+                    logger.error(f"Generate FGT (FC): {error_msg_fc_loop}")
+                    return jsonify({"error": error_msg_fc_loop, "thoughts": thoughts_for_ui}), 500
+            num_calls += 1
+
+        if num_calls >= MAX_FUNCTION_CALLS:
+            logger.error("Generate FGT (FC): Đã vượt quá số lần gọi tool tối đa.")
+            return jsonify({"error": "Đã vượt quá số lần gọi tool tối đa.", "thoughts": thoughts_for_ui}), 500
+        
+        logger.error("Generate FGT (FC): Vong lap Function Calling ket thuc bat thuong.")
+        return jsonify({"error": "Xử lý yêu cầu FortiGate thất bại sau nhiều bước.", "thoughts": thoughts_for_ui}), 500
+
+    fortigate_context_str_for_normal_generate = None
+    is_fortigate_related_request_normal = (
         target_os_name.lower() == 'fortios' or
-        (user_input and ("fortigate" in user_input.lower() or "fortios" in user_input.lower())) or
+        (user_input_prompt_str and ("fortigate" in user_input_prompt_str.lower() or "fortios" in user_input_prompt_str.lower())) or
         file_extension == 'fortios'
     )
 
-    if is_fortigate_related_request:
+    if is_fortigate_related_request_normal and not is_fortios_interactive_generate:
         if not fortigate_config_from_request or \
            not fortigate_config_from_request.get('ipHost') or \
            not fortigate_config_from_request.get('username'):
-            logger.warning("Generate FGT: Thieu info ket noi de lay ctx.")
-            fortigate_context_str = "Lưu ý: Không thể lấy ngữ cảnh FortiGate tự động do thiếu thông tin kết nối (IP/Host, Username trong Cài đặt)."
+            logger.warning("Generate (Normal FGT): Thieu info ket noi de lay ctx.")
+            fortigate_context_str_for_normal_generate = "Lưu ý: Không thể lấy ngữ cảnh FortiGate tự động do thiếu thông tin kết nối (IP/Host, Username trong Cài đặt)."
         else:
             try:
-                logger.info("Generate FGT: Dang lay thong tin ngu canh...")
-                fortigate_context_str = fetch_and_save_fortigate_context(
+                fortigate_context_str_for_normal_generate = fetch_and_save_fortigate_context(
                     fortigate_config_from_request,
-                    commands_to_fetch=fortigate_selected_commands
+                    commands_to_fetch=fortigate_selected_context_commands
                 )
-                logger.info("Generate FGT: Da lay xong thong tin ngu canh FortiGate.")
-            except Exception as e:
-                logger.error(f"Generate FGT: Loi khi lay ngu canh FortiGate: {e}", exc_info=True)
-                fortigate_context_str = f"Lưu ý: Xảy ra lỗi khi cố gắng lấy thông tin ngữ cảnh từ FortiGate: {str(e)}"
+            except Exception as e_ctx_norm:
+                logger.error(f"Generate (Normal FGT): Loi khi lay ngu canh: {e_ctx_norm}", exc_info=True)
+                fortigate_context_str_for_normal_generate = f"Lưu ý: Lỗi khi lấy ngữ cảnh: {str(e_ctx_norm)}"
 
-    full_prompt = create_prompt(user_input, backend_os_name, target_os_name, file_type_input, fortigate_context_data=fortigate_context_str)
-    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=False) # Truyen model_config da chuan hoa
-
-    logger.info("-" * 20 + " RAW GEMINI RESPONSE (Generate) " + "-" * 20)
-    logger.info(raw_response[:1000])
-    logger.info("-" * 60)
+    full_prompt = create_prompt(user_input_prompt_str, backend_os_name, target_os_name, file_type_input, fortigate_context_data=fortigate_context_str_for_normal_generate)
+    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=False)
 
     if raw_response and not raw_response.startswith("Lỗi"):
         ext_for_extraction = file_extension
@@ -128,28 +308,29 @@ def handle_generate():
         elif file_extension == 'fortios':
              ext_for_extraction = 'fortios'
 
-        generated_code = extract_code_block(raw_response, ext_for_extraction, user_input_for_context=user_input)
+        generated_code = extract_code_block(raw_response, ext_for_extraction, user_input_for_context=user_input_prompt_str)
         effective_generated_type = file_extension
         if ext_for_extraction == 'fortios':
             effective_generated_type = 'fortios'
 
         is_likely_raw_text = (generated_code == raw_response) and not generated_code.strip().startswith("```")
         if not generated_code.strip() or is_likely_raw_text:
-             logger.error(f"AI ko tra ve khoi ma hop le. Phan hoi tho: {raw_response[:200]}...")
-             return jsonify({"error": f"AI không trả về khối mã hợp lệ. Phản hồi: '{raw_response[:50]}...'"}), 500
+             logger.error(f"AI ko tra ve khoi ma hop le (Normal Gen). Phan hoi tho: {raw_response[:200]}...")
+             return jsonify({"error": f"AI không trả về khối mã hợp lệ. Phản hồi: '{raw_response[:50]}...'", "thoughts": []}), 500
 
-        potentially_dangerous = ["rm ", "del ", "format ", "shutdown ", "reboot ", ":(){:|:&};:", "dd if=/dev/zero", "mkfs"]
-        detected_dangerous = [kw for kw in potentially_dangerous if kw in generated_code.lower()]
+        potentially_dangerous = ["rm ", "del ", "format ", "shutdown ", "reboot ", ":(){:|:&};:", "dd if=/dev/zero", "mkfs", "execute formatlogdisk"]
+        detected_dangerous = [kw for kw in potentially_dangerous if kw.lower() in generated_code.lower()]
         if detected_dangerous:
-            logger.warning(f"Canh bao: Ma tao ra chua tu khoa nguy hiem: {detected_dangerous}")
-        return jsonify({"code": generated_code, "generated_for_type": effective_generated_type})
+            logger.warning(f"Canh bao (Normal Gen): Ma tao ra chua tu khoa nguy hiem: {detected_dangerous}")
+        return jsonify({"code": generated_code, "generated_for_type": effective_generated_type, "thoughts": []})
 
     status_code = 400
     if raw_response and ("Lỗi cấu hình" in raw_response or "Lỗi: Phản hồi bị chặn" in raw_response):
         status_code = 400
     else:
         status_code = 500
-    return jsonify({"error": raw_response or "Lỗi không xác định khi sinh mã."}), status_code
+    return jsonify({"error": raw_response or "Lỗi không xác định khi sinh mã.", "thoughts": []}), status_code
+
 
 @api_bp.route('/review', methods=['POST'])
 def handle_review():
@@ -157,7 +338,7 @@ def handle_review():
     data = request.get_json()
     code_to_review = data.get('code')
     raw_model_config_from_request = data.get('model_config', {})
-    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
+    model_config = _normalize_model_config(raw_model_config_from_request)
     file_type = data.get('file_type', 'py')
 
     if not code_to_review:
@@ -167,7 +348,7 @@ def handle_review():
     if not language_extension: language_extension = 'py'
 
     full_prompt = create_review_prompt(code_to_review, language_extension)
-    review_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
+    review_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
 
     if review_text and not review_text.startswith("Lỗi"):
         return jsonify({"review": review_text})
@@ -197,17 +378,20 @@ def handle_execute():
 
     if file_extension == 'fortios':
         logger.info(f"Nhan lenh FortiOS CLI (.{file_extension}). Chuan bi thuc thi.")
-        if not fortigate_config:
-            logger.error("Thieu fortigate_config cho lenh FortiOS.")
+        if not fortigate_config or not fortigate_config.get('ipHost') or not fortigate_config.get('username'):
+            logger.error("Thieu fortigate_config (IP/Host, User) cho lenh FortiOS.")
             return jsonify({
-                "message": "Lỗi: Thiếu thông tin cấu hình FortiGate.",
-                "output": "", "error": "Thiếu fortigate_config.", "return_code": -1,
+                "message": "Lỗi: Thiếu thông tin kết nối FortiGate (IP/Host, Username). Vui lòng kiểm tra Cài đặt.",
+                "output": "", "error": "Thiếu thông tin cấu hình FortiGate.", "return_code": -1,
                 "executed_file_type": file_extension, "codeThatFailed": code_to_execute
             }), 400
 
         fgt_result = execute_fortigate_commands(code_to_execute, fortigate_config)
         response_message = "Gửi lệnh FortiOS CLI thành công." if fgt_result["return_code"] == 0 and not fgt_result["error"] else \
                            "Gửi lệnh FortiOS CLI hoàn tất (có thể có lỗi)."
+        if fgt_result["error"] or (fgt_result["output"] and ("command fail" in fgt_result["output"].lower() or "error" in fgt_result["output"].lower())):
+             response_message = "Gửi lệnh FortiOS CLI hoàn tất, nhưng có vẻ đã xảy ra lỗi hoặc cảnh báo từ thiết bị."
+
         return jsonify({
             "message": response_message,
             "output": fgt_result["output"], "error": fgt_result["error"],
@@ -237,11 +421,12 @@ def handle_debug():
     stdout = data.get('stdout', '')
     stderr = data.get('stderr', '')
     raw_model_config_from_request = data.get('model_config', {})
-    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
+    model_config = _normalize_model_config(raw_model_config_from_request)
     file_type = data.get('file_type', 'py')
     fortigate_config_for_context = data.get('fortigate_config_for_context')
-    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
-
+    fortigate_selected_commands = data.get('fortigate_selected_context_commands', DEFAULT_FORTIGATE_CONTEXT_COMMANDS)
+    if not fortigate_selected_commands:
+        fortigate_selected_commands = DEFAULT_FORTIGATE_CONTEXT_COMMANDS
 
     if not failed_code:
         return jsonify({"error": "Thiếu mã lỗi để gỡ rối."}), 400
@@ -263,18 +448,16 @@ def handle_debug():
             fortigate_context_str_debug = "Lưu ý: Không thể lấy ngữ cảnh FortiGate tự động do thiếu thông tin kết nối (IP/Host, Username trong Cài đặt) để lấy ngữ cảnh mới."
         else:
             try:
-                logger.info("Debug FGT: Dang lay thong tin ngu canh...")
                 fortigate_context_str_debug = fetch_and_save_fortigate_context(
                     fortigate_config_for_context,
                     commands_to_fetch=fortigate_selected_commands
                 )
-                logger.info("Debug FGT: Da lay xong thong tin ngu canh FortiGate cho debug.")
-            except Exception as e:
-                logger.error(f"Debug FGT: Loi khi lay ngu canh FortiGate cho debug: {e}", exc_info=True)
-                fortigate_context_str_debug = f"Lưu ý: Xảy ra lỗi khi cố gắng lấy thông tin ngữ cảnh từ FortiGate cho debug: {str(e)}"
+            except Exception as e_ctx_dbg:
+                logger.error(f"Debug FGT: Loi khi lay ngu canh: {e_ctx_dbg}", exc_info=True)
+                fortigate_context_str_debug = f"Lưu ý: Lỗi khi lấy ngữ cảnh cho debug: {str(e_ctx_dbg)}"
 
     full_prompt = create_debug_prompt(original_prompt, failed_code, stdout, stderr, language_extension, fortigate_context_data=fortigate_context_str_debug)
-    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
+    raw_response = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
 
     if raw_response and not raw_response.startswith("Lỗi"):
         explanation_part = raw_response
@@ -282,52 +465,41 @@ def handle_debug():
         suggested_package = None
 
         if language_extension == 'py':
-            install_match = re.search(r"```bash\s*pip install\s+([\w\-==\.\+\[\]]+)\s*```", explanation_part, re.IGNORECASE)
+            install_match = re.search(r"```bash\s*pip install\s+([\w\-==\.\+\[\]]+)\s*```", explanation_part, re.IGNORECASE | re.DOTALL)
             if install_match:
                 suggested_package = install_match.group(1).strip()
-                logger.info(f"Debug (Python): De xuat package: {suggested_package}")
-                explanation_part = explanation_part[:install_match.start()].strip() + explanation_part[install_match.end():].strip()
+                explanation_part = explanation_part.replace(install_match.group(0), "").strip()
 
         last_code_block_match = None
-        debug_code_block_tag = language_extension if language_extension.isalnum() else 'code'
-        tags_to_try = [debug_code_block_tag]
-        if language_extension == 'py': tags_to_try.append('python')
-        if language_extension == 'sh': tags_to_try.extend(['bash', 'shell'])
-        if language_extension == 'bat': tags_to_try.append('batch')
-        if language_extension == 'ps1': tags_to_try.append('powershell')
-        if language_extension == 'fortios': tags_to_try.extend(['fortios', 'cli', 'text'])
-        unique_debug_tags = list(dict.fromkeys(tags_to_try + ['code']))
+        debug_code_block_tags_priority = [language_extension]
+        if language_extension == 'py': debug_code_block_tags_priority.append('python')
+        if language_extension == 'sh': debug_code_block_tags_priority.extend(['bash', 'shell'])
+        if language_extension == 'bat': debug_code_block_tags_priority.append('batch')
+        if language_extension == 'ps1': debug_code_block_tags_priority.append('powershell')
+        if language_extension == 'fortios': debug_code_block_tags_priority.extend(['fortios', 'cli', 'text'])
+        if 'code' not in debug_code_block_tags_priority: debug_code_block_tags_priority.append('code')
 
-        for lang_tag in unique_debug_tags:
-            pattern_strict = r"```" + re.escape(lang_tag) + r"(?:[^\S\n].*?)?\s*\n([\s\S]*?)\n```"
-            pattern_flexible = r"```" + re.escape(lang_tag) + r"(?:[^\S\n].*?)?\s*([\s\S]*?)\s*```"
-            if lang_tag == 'code':
-                 pattern_strict = r"```\s*\n([\s\S]*?)\n```"
-                 pattern_flexible = r"```\s*([\s\S]*?)\s*```"
-
-            for p_str in [pattern_strict, pattern_flexible]:
-                try:
-                    matches = list(re.finditer(p_str, explanation_part, re.IGNORECASE | re.MULTILINE))
-                    if matches:
-                        last_code_block_match = matches[-1]
-                        logger.info(f"Debug: Tim thay code sua loi voi tag '{lang_tag}'.")
-                        break
-                except re.error as re_err_debug:
-                    logger.error(f"Loi Regex debug code sua voi pattern '{p_str}' tag '{lang_tag}': {re_err_debug}")
-            if last_code_block_match: break
-
+        for lang_tag in reversed(debug_code_block_tags_priority):
+            pattern_str = r"```" + (re.escape(lang_tag) if lang_tag != 'code' else "") + r"(?:[^\S\n].*?)?\s*\n([\s\S]*?)\n```"
+            try:
+                matches = list(re.finditer(pattern_str, explanation_part, re.IGNORECASE | re.MULTILINE))
+                if matches:
+                    last_code_block_match = matches[-1]
+                    break
+            except re.error: pass
+        
         if last_code_block_match:
-            start_idx = last_code_block_match.start()
-            potential_explanation = explanation_part[:start_idx].strip()
-            if potential_explanation:
-                 explanation_part = potential_explanation
-            else:
-                 explanation_part = f"(AI chỉ trả về code {get_language_name(language_extension)} đã sửa, không có giải thích)"
             corrected_code = last_code_block_match.group(1).strip()
-
+            explanation_part = explanation_part[:last_code_block_match.start()].strip()
+            if not explanation_part:
+                 explanation_part = f"(AI chỉ trả về mã {get_language_name(language_extension)} đã sửa.)"
+        
         explanation_part = re.sub(r"^(Phân tích và đề xuất:|Giải thích và đề xuất:|Phân tích:|Giải thích:)\s*", "", explanation_part, flags=re.IGNORECASE | re.MULTILINE).strip()
+        if not explanation_part and not corrected_code and not suggested_package:
+            explanation_part = "(Không có giải thích, mã sửa, hoặc đề xuất package từ AI.)"
+
         return jsonify({
-            "explanation": explanation_part if explanation_part else "(Không có giải thích)",
+            "explanation": explanation_part,
             "corrected_code": corrected_code,
             "suggested_package": suggested_package,
             "original_language": language_extension
@@ -349,16 +521,16 @@ def handle_install_package():
     if not package_name:
         return jsonify({"error": "Thiếu tên package để cài đặt."}), 400
 
-    if not re.fullmatch(r"^[a-zA-Z0-9\-_==\.\+\[\]]+$", package_name.replace('[','').replace(']','')):
+    if not re.fullmatch(r"^[a-zA-Z0-9\-_==\.\+\[\]\s]+$", package_name):
         logger.warning(f"Ten package ko hop le bi tu choi: {package_name}")
         return jsonify({"success": False, "error": f"Tên package không hợp lệ: {package_name}"}), 400
 
     logger.info(f"--- Chuan bi cai dat package: {package_name} ---")
     try:
         pip_command_parts = [sys.executable, '-m', 'pip', 'install'] + shlex.split(package_name)
-        command = [part for part in pip_command_parts if part] # Remove empty parts
+        command = [part for part in pip_command_parts if part]
     except Exception as parse_err:
-        logger.error(f"Ko the phan tich ten package: {package_name} - {parse_err}")
+        logger.error(f"Ko the phan tich ten package '{package_name}': {parse_err}")
         return jsonify({"success": False, "error": f"Tên package không hợp lệ: {package_name}"}), 400
 
     try:
@@ -372,122 +544,251 @@ def handle_install_package():
         error_output = result.stderr
         return_code = result.returncode
 
-        logger.info(f"--- Ket qua cai dat (Ma tra ve: {return_code}) ---")
-        if output: logger.info(f"Output:\n{output}")
-        if error_output: logger.info(f"Loi Output:\n{error_output}")
+        if output: logger.info(f"Pip Output:\n{output}")
+        if error_output: logger.info(f"Pip Error Output:\n{error_output}")
 
         if return_code == 0:
             return jsonify({ "success": True, "message": f"Cài đặt '{package_name}' thành công.", "output": output, "error": error_output })
-
-        detailed_error = error_output.strip().split('\n')[-1] if error_output.strip() else f"Lệnh Pip thất bại với mã trả về {return_code}."
-        return jsonify({ "success": False, "message": f"Cài đặt '{package_name}' thất bại.", "output": output, "error": detailed_error }), 500
+        else:
+            detailed_error = error_output.strip() if error_output.strip() else f"Lệnh Pip thất bại với mã trả về {return_code}."
+            return jsonify({ "success": False, "message": f"Cài đặt '{package_name}' thất bại.", "output": output, "error": detailed_error }), 500
 
     except subprocess.TimeoutExpired:
-        logger.error(f"Loi: Cai dat package '{package_name}' qua thoi gian (120s).")
         return jsonify({"success": False, "error": f"Timeout khi cài đặt '{package_name}'.", "output": "", "error_detail": "Timeout"}), 408
     except FileNotFoundError:
-         logger.error(f"Loi: Khong tim thay '{sys.executable}' hoac pip.")
          return jsonify({"success": False, "error": "Lỗi hệ thống: Không tìm thấy Python hoặc Pip.", "output": "", "error_detail": "FileNotFoundError"}), 500
     except Exception as e:
-        logger.error(f"Loi nghiem trong khi cai dat package '{package_name}': {e}", exc_info=True)
         return jsonify({"success": False, "error": f"Lỗi hệ thống khi cài đặt: {e}", "output": "", "error_detail": str(e)}), 500
 
 @api_bp.route('/explain', methods=['POST'])
 def handle_explain():
     logger = current_app.logger
     data = request.get_json()
-    content_to_explain = data.get('content')
+    content_to_explain_input = data.get('content')
     context = data.get('context', 'unknown')
     raw_model_config_from_request = data.get('model_config', {})
-    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
-    file_type = data.get('file_type')
+    model_config = _normalize_model_config(raw_model_config_from_request)
+    file_type_for_code_context = data.get('file_type')
 
-    if not content_to_explain:
+    if not content_to_explain_input:
         return jsonify({"error": "Không có nội dung để giải thích."}), 400
 
-    if isinstance(content_to_explain, dict) or isinstance(content_to_explain, list):
-         try: content_to_explain = json.dumps(content_to_explain, ensure_ascii=False, indent=2)
-         except Exception: content_to_explain = str(content_to_explain)
-    else:
-        content_to_explain = str(content_to_explain)
+    content_to_explain_str = content_to_explain_input
+    if isinstance(content_to_explain_input, (dict, list)):
+         try: content_to_explain_str = json.dumps(content_to_explain_input, ensure_ascii=False, indent=2)
+         except Exception: content_to_explain_str = str(content_to_explain_input)
+    else: content_to_explain_str = str(content_to_explain_input)
 
-    explain_context = 'code' if context == 'python_code' else context
-    language_for_prompt = file_type if explain_context == 'code' else None
+    language_for_prompt = None
+    if context == 'code' and file_type_for_code_context:
+        language_for_prompt = file_type_for_code_context.split('.')[-1].lower() if '.' in file_type_for_code_context else file_type_for_code_context.lower()
+        if not language_for_prompt: language_for_prompt = 'txt'
 
-    full_prompt = create_explain_prompt(content_to_explain, explain_context, language=language_for_prompt)
-    explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
+    full_prompt = create_explain_prompt(content_to_explain_str, context, language=language_for_prompt)
+    explanation_text = generate_response_from_gemini(full_prompt, model_config, is_for_review_or_debug=True)
 
     if explanation_text and not explanation_text.startswith("Lỗi"):
+        explanation_text = re.sub(r"^(Đây là giải thích về.*?:\s*|Giải thích về.*?:\s*)", "", explanation_text, flags=re.IGNORECASE | re.MULTILINE).strip()
         return jsonify({"explanation": explanation_text})
 
     status_code = 400
     if explanation_text and ("Lỗi cấu hình" in explanation_text or "Lỗi: Phản hồi bị chặn" in explanation_text):
         status_code = 400
-    else:
-        status_code = 500
+    else: status_code = 500
     return jsonify({"error": explanation_text or "Lỗi không xác định khi giải thích."}), status_code
 
 @api_bp.route('/fortigate_chat', methods=['POST'])
 def handle_fortigate_chat():
     logger = current_app.logger
     data = request.get_json()
-    user_prompt = data.get('prompt')
+    user_prompt_str = data.get('prompt')
     fortigate_config_from_request = data.get('fortigate_config')
     raw_model_config_from_request = data.get('model_config', {})
-    model_config = _normalize_model_config(raw_model_config_from_request) # Chuan hoa
+    model_config = _normalize_model_config(raw_model_config_from_request)
     conversation_history_context_str = data.get('conversation_history_for_chat_context', "(Không có lịch sử FortiOS)")
-    fortigate_selected_commands = data.get('fortigate_selected_context_commands')
+    fortigate_selected_context_commands = data.get('fortigate_selected_context_commands', DEFAULT_FORTIGATE_CONTEXT_COMMANDS)
+    if not fortigate_selected_context_commands:
+        fortigate_selected_context_commands = DEFAULT_FORTIGATE_CONTEXT_COMMANDS
 
-    if not user_prompt:
-        return jsonify({"error": "Vui lòng nhập yêu cầu."}), 400
+    if not user_prompt_str:
+        return jsonify({"error": "Vui lòng nhập yêu cầu.", "thoughts": []}), 400
 
-    fortigate_context_str = "Thông tin ngữ cảnh FortiGate không có sẵn hoặc không thể lấy."
-    if fortigate_config_from_request and \
-        fortigate_config_from_request.get('ipHost') and \
-        fortigate_config_from_request.get('username'):
+    logger.info("FortiGate Chat: Bat dau xu ly voi Function Calling.")
+    if not fortigate_config_from_request or not fortigate_config_from_request.get('ipHost') or not fortigate_config_from_request.get('username'):
+        logger.warning("FortiGate Chat (FC): Thieu IP/Host hoac Username FortiGate.")
+        # return jsonify({"error": "Lỗi: Thiếu IP/Host hoặc Username cho FortiGate trong Cài đặt. AI không thể lấy thông tin.", "thoughts": []}), 400
+
+    initial_fortigate_context_str = "Thông tin ngữ cảnh FortiGate không thể lấy do thiếu cấu hình hoặc lỗi kết nối."
+    if fortigate_config_from_request and fortigate_config_from_request.get('ipHost') and fortigate_config_from_request.get('username'):
         try:
-            logger.info("FGT Chat: Lay ctx...")
-            fortigate_context_str = fetch_and_save_fortigate_context(
+            initial_fortigate_context_str = fetch_and_save_fortigate_context(
                 fortigate_config_from_request,
-                commands_to_fetch=fortigate_selected_commands
+                commands_to_fetch=fortigate_selected_context_commands
             )
-            logger.info("FGT Chat: Da lay xong ctx.")
-        except Exception as e:
-            logger.error(f"FGT Chat: Loi khi lay ctx: {e}", exc_info=True)
-            fortigate_context_str = f"Lưu ý: Xảy ra lỗi khi lấy ngữ cảnh FortiGate: {str(e)}"
-    else:
-        logger.warning("FGT Chat: Thieu info ket noi (IP/Host, User) de lay ctx.")
+        except Exception as e_ctx_chat:
+            logger.error(f"FGT Chat (FC): Loi khi lay ctx ban dau: {e_ctx_chat}")
+            initial_fortigate_context_str = f"Lưu ý: Lỗi khi lấy ngữ cảnh FortiGate ban đầu: {str(e_ctx_chat)}"
 
-    HISTORY_LIMIT = 10000
-    FGT_CTX_LIMIT = 8000 # Gioi han do dai ctx FGT
+    HISTORY_LIMIT_CHAT = 8000
+    FGT_CTX_LIMIT_CHAT = 6000
 
-    chat_prompt_for_gemini = f"""Bạn là một trợ lý AI chuyên gia về FortiGate.
-Người dùng hiện tại đang hỏi: "{user_prompt}"
+    system_instruction_for_chat = f"""Bạn là một trợ lý AI chuyên gia về FortiGate.
+Nhiệm vụ của bạn là trả lời câu hỏi của người dùng dựa trên kiến thức của bạn, thông tin ngữ cảnh FortiGate được cung cấp, và lịch sử hội thoại.
+Nếu bạn cần thêm thông tin cấu hình hoặc trạng thái hiện tại của FortiGate để trả lời chính xác, hãy sử dụng tool `get_fortigate_data` để chạy các lệnh 'show', 'get', hoặc 'diagnose'.
+KHÔNG tạo ra các khối mã lệnh mới trừ khi người dùng YÊU CẦU RÕ RÀNG trong câu hỏi hiện tại của họ là "tạo lệnh", "viết script", "generate config".
+Nếu người dùng chỉ hỏi thông tin, giải thích, hoặc gợi ý sửa lỗi, hãy cung cấp câu trả lời dưới dạng văn bản.
+Sử dụng Markdown cho câu trả lời của bạn. Bắt đầu trực tiếp bằng câu trả lời, không thêm lời dẫn.
 
-Dưới đây là một số thông tin ngữ cảnh từ thiết bị FortiGate của họ (được lấy bằng các lệnh {"đã chọn" if fortigate_selected_commands else "mặc định"}):
+Ngữ cảnh FortiGate hiện tại:
 <fortigate_config_context_start>
-{fortigate_context_str[:FGT_CTX_LIMIT]}
+{initial_fortigate_context_str[:FGT_CTX_LIMIT_CHAT]}
 </fortigate_config_context_start>
 
-Ngoài ra, đây là một phần lịch sử hội thoại gần đây giữa bạn và người dùng, bao gồm các lệnh FortiOS đã được tạo và kết quả thực thi của chúng (nếu có). Thông tin này giúp bạn hiểu rõ hơn bối cảnh hiện tại:
+Lịch sử hội thoại gần đây (nếu có):
 <conversation_history_start>
-{conversation_history_context_str[:HISTORY_LIMIT]}
+{conversation_history_context_str[:HISTORY_LIMIT_CHAT]}
 </conversation_history_start>
 
-Nhiệm vụ của bạn là trả lời câu hỏi của người dùng ("{user_prompt}") dựa trên kiến thức của bạn về FortiGate, thông tin ngữ cảnh cấu hình FortiGate ở trên, và lịch sử hội thoại đã cung cấp.
-Đặc biệt chú ý đến các đoạn mã FortiOS đã tạo trước đó và kết quả thực thi của chúng khi trả lời.
-KHÔNG tạo ra các khối mã lệnh mới trừ khi người dùng YÊU CẦU RÕ RÀNG trong câu hỏi hiện tại của họ là "tạo lệnh", "viết script", "generate config".
-Nếu người dùng chỉ hỏi thông tin về mã đã có hoặc lỗi đã xảy ra, hãy cung cấp thông tin, giải thích, hoặc gợi ý sửa lỗi (dưới dạng văn bản), không tự động viết lại code.
-Sử dụng Markdown cho câu trả lời của bạn.
-Bắt đầu trực tiếp bằng câu trả lời, không thêm lời dẫn.
+Yêu cầu hiện tại của người dùng: "{user_prompt_str}"
 """
-    raw_response = generate_response_from_gemini(chat_prompt_for_gemini, model_config, is_for_review_or_debug=True) # Truyen model_config da chuan hoa
 
-    if raw_response and not raw_response.startswith("Lỗi"):
-        cleaned_response = re.sub(r"^\s*\[(thinking|internal|process\w*)\].*$\n?", "", raw_response, flags=re.MULTILINE).strip()
-        return jsonify({"chat_response": cleaned_response})
-    else:
-        status_code = 500
-        if raw_response and ("Lỗi cấu hình" in raw_response or "Lỗi: Phản hồi bị chặn" in raw_response):
-            status_code = 400
-        return jsonify({"error": raw_response or "Lỗi không xác định khi chat với FortiGate."}), status_code
+    genai_api_key_to_use_chat = model_config.get('api_key') or current_app.config.get('GOOGLE_API_KEY')
+    if not genai_api_key_to_use_chat:
+        return jsonify({"error": "API Key của Google chưa được cấu hình.", "thoughts": []}), 500
+    try:
+        genai.configure(api_key=genai_api_key_to_use_chat)
+        logger.info(f"FGT Chat (FC): Da (lai) cau hinh GenAI voi key {'tu UI' if model_config.get('api_key') else 'tu .env'}.")
+    except Exception as e_cfg_genai_chat:
+        logger.error(f"Loi cau hinh GenAI (Chat FC): {e_cfg_genai_chat}")
+        return jsonify({"error": f"Lỗi cấu hình thư viện Google GenAI: {e_cfg_genai_chat}", "thoughts": []}), 500
+
+    gemini_model_name_chat = model_config.get('model_name', 'gemini-1.5-flash')
+    # Su dung genai.types cho GenerationConfig, SafetySetting, HarmCategory
+    try:
+        generation_config_obj_chat = GenerationConfig(
+            temperature=float(model_config.get('temperature', 0.7)),
+            top_p=float(model_config.get('top_p', 0.95)),
+            top_k=int(model_config.get('top_k', 40))
+        )
+        safety_setting_key_chat = model_config.get('safety_setting', 'BLOCK_MEDIUM_AND_ABOVE')
+        safety_settings_config_chat = current_app.config.get('SAFETY_SETTINGS_MAP', {}).get(safety_setting_key_chat, [])
+        safety_settings_list_chat = []
+        for setting in safety_settings_config_chat:
+            category_name_chat = setting['category'].replace("HARM_CATEGORY_", "")
+            if hasattr(genai.types.HarmCategory, category_name_chat): # Ktra HarmCategory tu genai.types
+                category_enum_chat = getattr(genai.types.HarmCategory, category_name_chat)
+                threshold_enum_chat = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
+                safety_settings_list_chat.append(genai.types.SafetySetting(category=category_enum_chat, threshold=threshold_enum_chat))
+            else:
+                logger.warning(f"Bo qua safety setting (Chat) voi category khong hop le: {setting['category']}")
+    except AttributeError as e_types_attr_chat:
+        logger.error(f"Loi AttributeError khi truy cap GenConfig/Safety/HarmCategory (Chat) tu google.generativeai.types: {e_types_attr_chat}. Thu import truc tiep tu genai.types")
+        generation_config_obj_chat = genai.types.GenerationConfig(
+            temperature=float(model_config.get('temperature', 0.7)),
+            top_p=float(model_config.get('top_p', 0.95)),
+            top_k=int(model_config.get('top_k', 40))
+        )
+        safety_setting_key_chat = model_config.get('safety_setting', 'BLOCK_MEDIUM_AND_ABOVE')
+        safety_settings_config_chat = current_app.config.get('SAFETY_SETTINGS_MAP', {}).get(safety_setting_key_chat, [])
+        safety_settings_list_chat = []
+        for setting in safety_settings_config_chat:
+            category_name_chat = setting['category'].replace("HARM_CATEGORY_", "")
+            if hasattr(genai.types.HarmCategory, category_name_chat):
+                category_enum_chat = getattr(genai.types.HarmCategory, category_name_chat)
+                threshold_enum_chat = getattr(genai.types.SafetySetting.HarmBlockThreshold, setting['threshold'])
+                safety_settings_list_chat.append(genai.types.SafetySetting(category=category_enum_chat, threshold=threshold_enum_chat))
+            else:
+                logger.warning(f"Bo qua safety setting (Chat fallback) voi category khong hop le: {setting['category']}")
+
+    model_for_chat_fc = GenerativeModel(gemini_model_name_chat, tools=AVAILABLE_TOOLS)
+    chat_session_fc = model_for_chat_fc.start_chat(history=[])
+    thoughts_for_ui_chat = []
+    MAX_FC_CHAT = 3
+    num_calls_chat = 0
+    current_content_for_send_message_chat: str | list[dict] = system_instruction_for_chat
+
+
+    while num_calls_chat < MAX_FC_CHAT:
+        logger.info(f"FGT Chat (FC Loop {num_calls_chat+1}/{MAX_FC_CHAT}): Sending to Gemini...")
+        response_chat = chat_session_fc.send_message(
+            content=current_content_for_send_message_chat,
+            generation_config=generation_config_obj_chat,
+            safety_settings=safety_settings_list_chat
+        )
+        candidate_chat = response_chat.candidates[0]
+
+        if not candidate_chat.content or not candidate_chat.content.parts:
+            logger.error("FGT Chat (FC): Phan hoi cua AI khong co content hoac parts.")
+            return jsonify({"error": "AI trả về phản hồi không hợp lệ (không có content hoặc parts).", "thoughts": thoughts_for_ui_chat}), 500
+
+        function_call_part_chat = None
+        for part_item_chat in candidate_chat.content.parts:
+            if hasattr(part_item_chat, 'function_call') and part_item_chat.function_call: 
+                function_call_part_chat = part_item_chat.function_call
+                break
+
+        if function_call_part_chat:
+            fc_chat = function_call_part_chat
+            tool_name_chat = fc_chat.name
+            tool_args_chat = dict(fc_chat.args) if fc_chat.args else {}
+            current_ts_chat = datetime.now().isoformat()
+            logger.info(f"FGT Chat (FC): AI requested tool '{tool_name_chat}' with args: {tool_args_chat}")
+            thoughts_for_ui_chat.append({
+                "type": "function_call_request", "tool_name": tool_name_chat,
+                "tool_args": tool_args_chat, "timestamp": current_ts_chat
+            })
+
+            tool_response_text_chat = ""
+            tool_error_flag_chat = False
+
+            if tool_name_chat == "get_fortigate_data":
+                fgt_cmd_chat = tool_args_chat.get("command")
+                if fgt_cmd_chat:
+                    if not fortigate_config_from_request or not fortigate_config_from_request.get('ipHost') or not fortigate_config_from_request.get('username'):
+                        tool_response_text_chat = "Lỗi: Backend không thể thực thi lệnh FortiGate vì thiếu thông tin IP/Host hoặc Username."
+                        tool_error_flag_chat = True
+                    else:
+                        exec_res_chat = execute_fortigate_commands(fgt_cmd_chat, fortigate_config_from_request)
+                        if exec_res_chat["error"]:
+                            tool_response_text_chat = f"Lỗi khi chạy '{fgt_cmd_chat}': {exec_res_chat['error']}. Output: {exec_res_chat['output']}"
+                            tool_error_flag_chat = True
+                        else:
+                            tool_response_text_chat = exec_res_chat["output"] if exec_res_chat["output"] else "(Lệnh không có output)"
+                else:
+                    tool_response_text_chat = "Lỗi: Tool 'get_fortigate_data' thiếu 'command'."
+                    tool_error_flag_chat = True
+            else:
+                tool_response_text_chat = f"Lỗi: Tool '{tool_name_chat}' không được backend hỗ trợ."
+                tool_error_flag_chat = True
+            
+            thoughts_for_ui_chat.append({
+                "type": "function_call_result", "tool_name": tool_name_chat,
+                "result_data": tool_response_text_chat, "is_error": tool_error_flag_chat,
+                "timestamp": datetime.now().isoformat()
+            })
+            current_content_for_send_message_chat = [{
+                "function_response": {
+                    "name": tool_name_chat,
+                    "response": {"output": tool_response_text_chat}
+                }
+            }]
+        else:
+            finish_reason_name_chat = candidate_chat.finish_reason.name if hasattr(candidate_chat.finish_reason, 'name') else str(candidate_chat.finish_reason)
+            if finish_reason_name_chat == "STOP":
+                final_text_chat = "".join(part_item_chat.text for part_item_chat in candidate_chat.content.parts if hasattr(part_item_chat, 'text') and part_item_chat.text)
+                logger.info(f"FGT Chat (FC): AI final response (text): {final_text_chat[:200]}...")
+                cleaned_response_chat = re.sub(r"^\s*\[(thinking|internal|process\w*)\].*$\n?", "", final_text_chat, flags=re.MULTILINE).strip()
+                return jsonify({"chat_response": cleaned_response_chat, "thoughts": thoughts_for_ui_chat})
+            else:
+                safety_ratings_str_chat = str(getattr(candidate_chat, 'safety_ratings', 'N/A'))
+                error_msg_fc_loop_chat = f"AI (Chat FC) không trả về FC/text. Lý do: {finish_reason_name_chat}. Safety: {safety_ratings_str_chat}"
+                logger.error(f"FGT Chat (FC): {error_msg_fc_loop_chat}")
+                return jsonify({"error": error_msg_fc_loop_chat, "thoughts": thoughts_for_ui_chat}), 500
+        num_calls_chat += 1
+
+    if num_calls_chat >= MAX_FC_CHAT:
+        logger.error("FGT Chat (FC): Đã vượt quá số lần gọi tool tối đa.")
+        return jsonify({"error": "Đã vượt quá số lần gọi tool tối đa cho chat.", "thoughts": thoughts_for_ui_chat}), 500
+    
+    logger.error("FGT Chat (FC): Vong lap Function Calling ket thuc bat thuong.")
+    return jsonify({"error": "Xử lý yêu cầu chat FortiGate thất bại.", "thoughts": thoughts_for_ui_chat}), 500

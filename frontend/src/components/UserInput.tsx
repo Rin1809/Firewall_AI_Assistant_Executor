@@ -1,17 +1,17 @@
 // frontend/src/components/UserInput.tsx
 import React, { KeyboardEvent, useRef, useEffect } from 'react';
-import { FiSend, FiTool } from 'react-icons/fi'; // FiTool cho nut Tuong Tac
+import { FiSend, FiTool, FiMessageSquare } from 'react-icons/fi'; // Them FiMessageSquare
 import { TargetOS } from '../App';
 import './UserInput.css';
 
 interface UserInputProps {
   prompt: string;
   setPrompt: (value: string) => void;
-  onPrimarySubmit: () => void; // Ham xu ly chinh khi gui (Ctrl+Enter hoac nut Send)
+  onPrimarySubmit: () => void;
   isLoading: boolean;
   targetOs: TargetOS;
-  isFortiGateInteractiveMode: boolean; // Trang thai che do tuong tac FGT
-  onToggleFortiGateInteractiveMode: () => void; // Ham de bat/tat che do
+  isFortiGateInteractiveMode: boolean;
+  onToggleFortiGateInteractiveMode: () => void;
 }
 
 const UserInput: React.FC<UserInputProps> = ({
@@ -45,8 +45,8 @@ const UserInput: React.FC<UserInputProps> = ({
   const getPlaceholderText = () => {
       if (targetOs === 'fortios') {
           return isFortiGateInteractiveMode
-            ? "Nhập yêu cầu tạo lệnh/cấu hình FortiGate (Ctrl+Enter để gửi)..."
-            : "Chat với FortiAI về FortiGate (Ctrl+Enter để gửi)...";
+            ? "Nhập yêu cầu tạo lệnh/cấu hình FortiGate (AI có thể gọi tool lấy thông tin)..."
+            : "Chat với FortiAI về FortiGate (AI có thể gọi tool lấy thông tin)...";
       }
       return "Nhập yêu cầu (Ctrl+Enter để gửi)...";
   };
@@ -54,18 +54,16 @@ const UserInput: React.FC<UserInputProps> = ({
   return (
     <div className="user-input-container">
       <div className="user-input-area">
-        {/* Container for suggestion chips, luon render de animation */}
         <div className={`input-suggestion-chips ${targetOs === 'fortios' ? 'visible' : ''}`}>
-          {/* Nut chi render khi targetOs la 'fortios' */}
           {targetOs === 'fortios' && (
               <button
                 onClick={onToggleFortiGateInteractiveMode}
                 disabled={isLoading}
                 className={`suggestion-chip interactive-fgt-chip ${isFortiGateInteractiveMode ? 'active' : ''}`}
-                title={isFortiGateInteractiveMode ? "Tắt chế độ tạo lệnh FortiGate (Chuyển sang Chat)" : "Bật chế độ tạo lệnh FortiGate"}
+                title={isFortiGateInteractiveMode ? "Chế độ Tạo Lệnh FortiGate (AI ưu tiên tạo lệnh, có thể gọi tool)" : "Chế độ Chat FortiGate (AI ưu tiên trả lời, có thể gọi tool)"}
               >
-                <FiTool size="0.9em" style={{ marginRight: '6px' }} />
-                Tương tác {isFortiGateInteractiveMode ? '(ON)' : '(OFF)'}
+                {isFortiGateInteractiveMode ? <FiTool size="0.9em" style={{ marginRight: '6px' }} /> : <FiMessageSquare size="0.9em" style={{ marginRight: '6px' }} />}
+                {isFortiGateInteractiveMode ? 'Tạo Lệnh (ON)' : 'Chat (ON)'}
               </button>
           )}
         </div>
@@ -99,7 +97,7 @@ const UserInput: React.FC<UserInputProps> = ({
         </div>
       </div>
       <div className="input-footer-text">
-        Đây là phiên bản thử nghiệm, có thể gặp lỗi trong quá trình sử dụng. ᓚᘏᗢ
+        Đây là phiên bản thử nghiệm, AI có thể "suy nghĩ" (gọi tool) để trả lời tốt hơn.
       </div>
     </div>
   );

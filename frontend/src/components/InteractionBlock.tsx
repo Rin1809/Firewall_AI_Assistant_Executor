@@ -1,14 +1,15 @@
 // frontend/src/components/InteractionBlock.tsx
 import React, { useRef, useEffect } from 'react';
-import { FiUser, FiCode, FiPlay, FiEye, FiAlertTriangle, FiTool, FiCheckCircle, FiLoader, FiCopy, FiDownload, FiTerminal, FiHelpCircle, FiCommand, FiEdit, FiSave, FiXCircle } from 'react-icons/fi';
+import { FiUser, FiCode, FiPlay, FiEye, FiAlertTriangle, FiTool, FiCheckCircle, FiLoader, FiCopy, FiDownload, FiTerminal, FiHelpCircle, FiCommand, FiEdit, FiSave, FiXCircle, FiCpu } from 'react-icons/fi'; // Them FiCpu
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ExpandableOutput from './ExpandableOutput';
-import { ConversationBlock, ExecutionResult, ReviewResult, DebugResult, InstallationResult, ExplainResult } from '../App';
+import AiThinkingDisplay from './AiThinkingDisplay'; // Import component moi
+import { ConversationBlock, ExecutionResult, ReviewResult, DebugResult, InstallationResult, ExplainResult, AiThought } from '../App';
 import { toast } from 'react-toastify';
-import './CenterArea.css'; // Đảm bảo CSS cho editor và nút mới ở đây
+import './CenterArea.css';
 
 interface InteractionBlockProps {
     block: ConversationBlock;
@@ -23,7 +24,6 @@ interface InteractionBlockProps {
     onToggleOutputExpand: (blockId: string, type: 'stdout' | 'stderr') => void;
     'data-block-id'?: string;
 
-    // Props cho chỉnh sửa code
     editingBlockId: string | null;
     currentEditingCode: string | null;
     onToggleEditCode: (blockId: string, currentCodeInBlock: string) => void;
@@ -62,11 +62,10 @@ const getLanguageForHighlighter = (ext?: string): string => {
 const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
     block, isBusy, onReview, onExecute, onDebug, onApplyCorrectedCode,
     onInstallPackage, onExplain, expandedOutputs, onToggleOutputExpand,
-    // Destructure props mới
     editingBlockId, currentEditingCode, onToggleEditCode,
     onUpdateEditingCode, onSaveEditedCode, onCancelEditCode
  }) => {
-  const { type, data, id, timestamp, isNew, generatedType } = block;
+  const { type, data, id, timestamp, isNew, generatedType, thoughts } = block; // Lay them thoughts
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isEditingThisBlock = editingBlockId === id && type === 'ai-code';
@@ -74,14 +73,13 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
   useEffect(() => {
     if (isEditingThisBlock && textareaRef.current) {
         textareaRef.current.focus();
-        // Auto-resize textarea
-        textareaRef.current.style.height = 'auto'; // Reset height
+        textareaRef.current.style.height = 'auto';
         const scrollHeight = textareaRef.current.scrollHeight;
-        const maxHeight = 500; // Giống max-height của SyntaxHighlighter
+        const maxHeight = 500;
         textareaRef.current.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
         textareaRef.current.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
     }
-  }, [isEditingThisBlock, currentEditingCode]); // Chạy lại khi bắt đầu edit hoặc code thay đổi
+  }, [isEditingThisBlock, currentEditingCode]);
 
   const handleCopy = (text: string | null | undefined) => { if (typeof text === 'string') navigator.clipboard.writeText(text).then(() => toast.info("Đã sao chép!")); };
   const handleDownload = (filename: string, text: string | null | undefined) => {
@@ -101,8 +99,13 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
   };
 
    const renderContent = (): JSX.Element | null => {
+    // Xu ly block thoughts truoc
+    const thoughtsDisplay = thoughts && thoughts.length > 0 ? <AiThinkingDisplay thoughts={thoughts} blockIdSuffix={id} /> : null;
+
+    let mainBlockContent: JSX.Element | null = null;
+
     switch (type) {
-      case 'user': return <div className="prompt-text">{String(data ?? '')}</div>;
+      case 'user': mainBlockContent = <div className="prompt-text">{String(data ?? '')}</div>; break;
       case 'ai-code':
         const codeStrFromData = String(data ?? '').trim();
         const displayLang = generatedType || 'txt';
@@ -110,7 +113,7 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
         const defaultFileName = displayLang === 'fortios' ? 'fortigate_commands.txt' : `script.${displayLang}`;
 
         if (isEditingThisBlock) {
-            return (
+            mainBlockContent = (
                 <textarea
                     ref={textareaRef}
                     className="code-editor-textarea"
@@ -125,7 +128,7 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
             );
         } else {
             if (codeStrFromData) {
-                return ( <div className="code-block-container">
+                mainBlockContent = ( <div className="code-block-container">
                        <div className="code-block-header">
                            <span>{displayLang}</span>
                            <div>
@@ -136,25 +139,28 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
                        </div>
                        <SyntaxHighlighter language={highlighterLang} style={vscDarkPlus as any} className="main-code-block" showLineNumbers wrapLines lineProps={{style: {wordBreak: 'break-all', whiteSpace: 'pre-wrap'}}}>{codeStrFromData}</SyntaxHighlighter>
                     </div> );
-            } else return <p className="error-inline">Nhận được khối mã/lệnh rỗng.</p>;
+            } else mainBlockContent = <p className="error-inline">Nhận được khối mã/lệnh rỗng.</p>;
         }
-      case 'review': /* ... giữ nguyên ... */
+        break;
+      case 'review':
         const reviewData = data as ReviewResult;
-        return <div className="markdown-content review-content">{reviewData?.error ? ( <p className="error-inline">{reviewData.error}</p> ) : ( <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{reviewData?.review || '(Ko có review)'}</ReactMarkdown> )}</div>;
-      case 'execution': /* ... giữ nguyên ... */
+        mainBlockContent = <div className="markdown-content review-content">{reviewData?.error ? ( <p className="error-inline">{reviewData.error}</p> ) : ( <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{reviewData?.review || '(Ko có review)'}</ReactMarkdown> )}</div>;
+        break;
+      case 'execution':
         const execData = data as ExecutionResult; const currentOutputStateExec = expandedOutputs[id] || { stdout: false, stderr: false };
         const execHasError = hasErrorSignal(execData);
-        return ( <div className={`execution-content ${execHasError ? 'error' : ''}`}>
+        mainBlockContent = ( <div className={`execution-content ${execHasError ? 'error' : ''}`}>
              {execData?.warning && ( <p className="exec-warning error-inline"><FiAlertTriangle style={{ marginRight: '5px', verticalAlign: 'middle' }}/> {execData.warning}</p> )}
              {execData?.message && !execData.message.startsWith("Thực thi") && !execData.message.startsWith("Đã gửi") && !execData.message.startsWith("Gửi lệnh") && <p className="exec-message">{execData.message}</p>}
              <ExpandableOutput text={execData?.output} label="stdout" isExpanded={currentOutputStateExec.stdout} onToggleExpand={() => onToggleOutputExpand(id, 'stdout')} className="stdout-section" />
              <ExpandableOutput text={execData?.error} label="stderr" isExpanded={currentOutputStateExec.stderr} onToggleExpand={() => onToggleOutputExpand(id, 'stderr')} className="stderr-section" />
              {execData?.return_code !== undefined && <p className="return-code">Mã trả về: {execData.return_code}</p>}
           </div> );
-      case 'debug': /* ... giữ nguyên ... */
+          break;
+      case 'debug':
         const debugData = data as DebugResult; const correctedCode = debugData?.corrected_code?.trim(); const suggestedPackage = debugData?.suggested_package;
         const showInstallButton = !!suggestedPackage; const correctedCodeLang = debugData?.original_language || 'code'; const correctedHighlighterLang = getLanguageForHighlighter(correctedCodeLang);
-        return ( <div className="debug-content">
+        mainBlockContent = ( <div className="debug-content">
                 {debugData?.error && <p className="error-inline">{debugData.error}</p>}
                 {debugData?.explanation && ( <div className="markdown-content explanation-content"><h4>Giải thích & Đề xuất</h4><ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{debugData.explanation}</ReactMarkdown></div> )}
                  {showInstallButton && suggestedPackage && ( <div className="install-suggestion-area block-actions-area"><button onClick={() => onInstallPackage(suggestedPackage, id)} disabled={isBusy} className="install-package-button"><FiDownload /> Cài <code>{suggestedPackage}</code></button></div> )}
@@ -165,23 +171,37 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
                         </div> </> )}
                  {!debugData?.error && !debugData?.explanation && !correctedCode && !suggestedPackage && ( <p className="info-inline">(Ko có đề xuất/mã sửa.)</p> )}
             </div> );
-      case 'installation': /* ... giữ nguyên ... */
+            break;
+      case 'installation':
           const installData = data as InstallationResult; const currentOutputStateInst = expandedOutputs[id] || { stdout: false, stderr: false };
-          return ( <div className={`installation-content ${!installData.success ? 'error' : ''}`}>
+          mainBlockContent = ( <div className={`installation-content ${!installData.success ? 'error' : ''}`}>
                   <p className="install-message">{installData.success ? <FiCheckCircle style={{ color: 'var(--success-color)', marginRight: '8px', flexShrink: 0 }}/> : <FiAlertTriangle style={{ color: 'var(--danger-color)', marginRight: '8px', flexShrink: 0 }}/> } Cài đặt <strong>{installData.package_name || 'package'}</strong>: {installData.message}</p>
                   <ExpandableOutput text={installData?.output} label="pip output" isExpanded={currentOutputStateInst.stdout} onToggleExpand={() => onToggleOutputExpand(id, 'stdout')} className="stdout-section" />
                   <ExpandableOutput text={installData?.error} label="pip error" isExpanded={currentOutputStateInst.stderr} onToggleExpand={() => onToggleOutputExpand(id, 'stderr')} className="stderr-section" />
               </div> );
-      case 'explanation': /* ... giữ nguyên ... */
+              break;
+      case 'explanation':
           const explainData = data as ExplainResult;
-          return <div className="markdown-content explanation-content">{explainData?.error ? ( <p className="error-inline">{explainData.error}</p> ) : ( <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{explainData?.explanation || '(Ko có giải thích)'}</ReactMarkdown> )}</div>;
-      case 'loading': return <div className="loading-content"><FiLoader className="spinner" /> <p>{String(data ?? 'Đang tải...')}</p></div>;
-      case 'error': return <div className="error-inline">{String(data ?? 'Lỗi ko xác định.')}</div>;
-      default: return <div className="unknown-block error-inline">Loại khối ko xđ: {type}</div>;
+          mainBlockContent = <div className="markdown-content explanation-content">{explainData?.error ? ( <p className="error-inline">{explainData.error}</p> ) : ( <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{explainData?.explanation || '(Ko có giải thích)'}</ReactMarkdown> )}</div>;
+          break;
+      case 'loading': mainBlockContent = <div className="loading-content"><FiLoader className="spinner" /> <p>{String(data ?? 'Đang tải...')}</p></div>; break;
+      case 'error': mainBlockContent = <div className="error-inline">{String(data ?? 'Lỗi ko xác định.')}</div>; break;
+      case 'ai_thinking_process': // Type moi de hien thi thoughts nhu la mot block rieng
+          mainBlockContent = thoughts && thoughts.length > 0 ? <AiThinkingDisplay thoughts={thoughts} blockIdSuffix={id}/> : <p className="info-inline">(AI không thực hiện thêm bước suy nghĩ nào)</p>;
+          break;
+      default: mainBlockContent = <div className="unknown-block error-inline">Loại khối ko xđ: {type}</div>;
     }
+
+    // Neu block la ai-code, explanation, etc. va co thoughts, render thoughtsDisplay TRUOC mainBlockContent
+    if (thoughtsDisplay && (type === 'ai-code' || type === 'explanation' || type === 'review' || type === 'debug' || type === 'execution')) {
+        return <> {thoughtsDisplay} {mainBlockContent} </>;
+    }
+    // Neu la block 'ai_thinking_process', no da tu render thoughtsDisplay roi
+    // Cac block khac (user, loading, error) ko co thoughts.
+    return mainBlockContent;
    };
 
-  const renderIcon = () => { /* ... giữ nguyên ... */
+  const renderIcon = () => {
        switch(type) {
            case 'user': return <span className="block-icon user-icon"><FiUser/></span>;
            case 'ai-code': return <span className={`block-icon ${generatedType === 'fortios' ? 'fgt-cli-icon' : 'ai-icon'}`}>{generatedType === 'fortios' ? <FiCommand/> : <FiCode/>}</span>;
@@ -192,6 +212,7 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
            case 'error': return <span className="block-icon error-icon"><FiAlertTriangle/></span>;
            case 'installation': const installSuccess = (data as InstallationResult)?.success; return <span className={`block-icon installation-icon ${installSuccess ? 'success' : 'error'}`}>{installSuccess ? <FiCheckCircle/> : <FiTerminal/>}</span>;
            case 'explanation': return <span className="block-icon info-icon"><FiHelpCircle/></span>;
+           case 'ai_thinking_process': return <span className="block-icon ai-thinking-icon"><FiCpu /></span>; // Icon cho block suy nghi
            default: return <span className="block-icon unknown-icon">?</span>;
        }
    };
@@ -215,9 +236,7 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
 
         if (type === 'execution' && hasErrorSignal(data)) {
             const execResult = data as ExecutionResult;
-            // Xác định code gốc đã tạo ra kết quả lỗi này
             let codeThatFailedForDebug = execResult?.codeThatFailed;
-            // Tìm block ai-code ngay trước block execution này
             const executionBlockIndex = block.parentConversation?.findIndex(b => b.id === id) ?? -1;
             if (executionBlockIndex > 0 && block.parentConversation) {
                 const precedingAICodeBlock = block.parentConversation
@@ -225,7 +244,6 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
                     .reverse()
                     .find(b => b.type === 'ai-code');
                 if (precedingAICodeBlock) {
-                    // Nếu block AI code đó đang được sửa, lấy currentEditingCode
                     if (editingBlockId === precedingAICodeBlock.id && currentEditingCode !== null) {
                         codeThatFailedForDebug = currentEditingCode;
                     } else {
@@ -238,7 +256,6 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
             }
         }
 
-
         let explainContent: any = data; let explainContext: string = type; let showExplain = false;
         if (type === 'ai-code' && codeForAction && codeForAction.trim()) { explainContent = codeForAction; explainContext = 'code'; showExplain = true; }
         else if (type === 'review' && (data as ReviewResult)?.review && !(data as ReviewResult)?.error) { explainContent = (data as ReviewResult).review; explainContext = 'review_text'; showExplain = true; }
@@ -246,35 +263,29 @@ const InteractionBlock: React.FC<InteractionBlockProps> = React.memo(({
         else if (type === 'debug' && !(data as DebugResult)?.error && ((data as DebugResult)?.explanation || (data as DebugResult)?.corrected_code || (data as DebugResult)?.suggested_package)) { explainContent = data; explainContext = 'debug_result'; showExplain = true; }
         else if (type === 'installation') { explainContent = data; explainContext = 'installation_result'; showExplain = true; }
         else if (type === 'error' && data) { explainContent = String(data); explainContext = 'error_message'; showExplain = true; }
-        if (showExplain && !isEditingThisBlock) actions.push(<button key="explain" onClick={() => onExplain(id, explainContent, explainContext)} disabled={isBusy} className="explain"><FiHelpCircle /> Giải thích</button>);
+        // Khong cho phep explain block ai_thinking_process
+        if (showExplain && !isEditingThisBlock && type !== 'ai_thinking_process') actions.push(<button key="explain" onClick={() => onExplain(id, explainContent, explainContext)} disabled={isBusy} className="explain"><FiHelpCircle /> Giải thích</button>);
         return actions;
    };
 
-  const mainContent = renderContent();
-  const actionButtons = renderActionButtons();
+  const mainContentRendered = renderContent();
 
   return (
     <div className={`interaction-block block-type-${type} ${isNew ? 'newly-added' : ''}`} data-block-id={id}>
       <div className="block-avatar"> {renderIcon()} </div>
       <div className="block-main-content">
-         {type === 'user' && (<div className="block-header user-header"><span className="user-header-title">ᓚᘏᗢ - Prompt</span><span className="block-timestamp">{formatTimestamp(timestamp)}</span></div>)}
+         {type === 'user' && (<div className="block-header user-header"><span className="user-header-title">Yêu cầu</span><span className="block-timestamp">{formatTimestamp(timestamp)}</span></div>)}
          {type === 'ai-code' && isEditingThisBlock && (
             <div className="block-header editing-header">
                 <span className="editing-title-text"><FiEdit style={{ marginRight: '6px' }} />Đang chỉnh sửa {generatedType || 'code'}...</span>
             </div>
          )}
-        <div className="block-content-area">{mainContent}</div>
-        {actionButtons.length > 0 && (<div className="block-actions-area">{actionButtons}</div>)}
+         {/* Khong can them dieu kien cho thoughts o day, vi renderContent da xu ly */}
+        <div className="block-content-area">{mainContentRendered}</div>
+        {renderActionButtons().length > 0 && (<div className="block-actions-area">{renderActionButtons()}</div>)}
       </div>
     </div>
    );
 });
 
-// Thêm prop parentConversation vào InteractionBlockProps để lấy code gốc cho debug
-// Cập nhật ở App.tsx khi truyền conversation vào CenterArea và sau đó vào InteractionBlock
-// Hoặc cách đơn giản hơn: khi gọi onDebug, App.tsx tự tìm code gốc.
-// -> Hiện tại, App.tsx trong handleDebug đã tự tìm prompt gốc.
-// Về code gốc bị lỗi, `ExecutionResult` đã có `codeThatFailed`.
-// Tuy nhiên, nếu code gốc đó là một block `ai-code` và nó đang được `editingBlockId`, thì debug nên dùng `currentEditingCode`.
-// -> Sẽ điều chỉnh logic trong `handleDebug` của `App.tsx`.
 export default InteractionBlock;

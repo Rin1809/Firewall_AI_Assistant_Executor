@@ -1,6 +1,6 @@
 // frontend/src/components/CenterArea.tsx
 import React, { useRef, useEffect } from 'react';
-import { FiSettings, FiChevronUp, FiEdit, FiSave } from 'react-icons/fi'; // Thêm icons
+import { FiSettings, FiChevronUp, FiEdit, FiSave } from 'react-icons/fi';
 import UserInput from './UserInput';
 import InteractionBlock from './InteractionBlock';
 import CollapsedInteractionBlock from './CollapsedInteractionBlock';
@@ -29,7 +29,6 @@ interface CenterAreaProps {
   isFortiGateInteractiveMode: boolean;
   onToggleFortiGateInteractiveMode: () => void;
 
-  // Props cho chỉnh sửa code
   editingBlockId: string | null;
   currentEditingCode: string | null;
   onToggleEditCode: (blockId: string, currentCodeInBlock: string) => void;
@@ -45,26 +44,29 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
     onInstallPackage, onExplain, collapsedStates, onToggleCollapse,
     expandedOutputs, onToggleOutputExpand, onToggleSidebar, targetOs,
     isFortiGateInteractiveMode, onToggleFortiGateInteractiveMode,
-    // Destructure props mới
     editingBlockId, currentEditingCode, onToggleEditCode,
     onUpdateEditingCode, onSaveEditedCode, onCancelEditCode
   } = props;
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const endOfMessagesRef = useRef<HTMLDivElement>(null); // Tham chieu den phan tu cuoi cung
 
   useEffect(() => {
     if (endOfMessagesRef.current) {
       const lastBlock = conversation.length > 0 ? conversation[conversation.length - 1] : null;
-      // Cuộn xuống nếu block cuối cùng là mới hoặc nếu đang tải (có block loading)
-      if ((lastBlock && lastBlock.isNew) || conversation.some(b => b.type === 'loading')) {
+      // Cuon xuong neu block cuoi cung la moi HOAC block loading HOAC block suy nghi
+      if (
+        (lastBlock && lastBlock.isNew) ||
+        conversation.some(b => b.type === 'loading' || b.type === 'ai_thinking_process')
+      ) {
+        // Delay ngan de cho DOM cap nhat kich thuoc sau khi them block moi
         const timer = setTimeout(() => {
           endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
-        }, 100); // Delay ngắn hơn cho phản hồi nhanh hơn
+        }, 100); // Delay ngan hon
         return () => clearTimeout(timer);
       }
     }
-  }, [conversation]);
+  }, [conversation]); // Chay lai khi conversation thay doi
 
 
   const renderConversation = () => {
@@ -73,11 +75,17 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
     let currentRoundBlocks: ConversationBlock[] = [];
 
     for (const block of conversation) {
+        // Block 'ai_thinking_process' se duoc xem nhu la con cua user prompt gan nhat
+        // Hoac neu khong co user prompt, no se la con cua placeholder
         if (block.type === 'user') {
             if (currentUserBlock) rounds.push({ userBlock: currentUserBlock, childrenBlocks: currentRoundBlocks });
             currentUserBlock = block; currentRoundBlocks = [];
-        } else if (currentUserBlock) currentRoundBlocks.push(block);
-        else rounds.push({ userBlock: { type: 'placeholder', data: null, id: `ph-${block.id}`, timestamp: block.timestamp, isNew: block.isNew }, childrenBlocks: [block] });
+        } else if (currentUserBlock) {
+            currentRoundBlocks.push(block);
+        } else {
+            // Neu block dau tien khong phai user (VD: loi global, hoac suy nghi ko co user prompt truoc)
+            rounds.push({ userBlock: { type: 'placeholder', data: null, id: `ph-${block.id}`, timestamp: block.timestamp, isNew: block.isNew, thoughts: [] }, childrenBlocks: [block] });
+        }
     }
     if (currentUserBlock) rounds.push({ userBlock: currentUserBlock, childrenBlocks: currentRoundBlocks });
 
@@ -85,16 +93,15 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
         const userBlockId = round.userBlock.id;
         const isPlaceholder = round.userBlock.type === 'placeholder';
         const isLastRound = index === rounds.length - 1;
-        const isCollapsed = !isLastRound && !isPlaceholder && (collapsedStates[userBlockId] !== false);
+        const isCollapsed = !isLastRound && !isPlaceholder && (collapsedStates[userBlockId] !== false); // Mac dinh la collapsed neu ko phai round cuoi
 
-        if (isPlaceholder) {
+        if (isPlaceholder) { // Hien thi cac block con cua placeholder (neu co)
              return ( <div key={userBlockId} className="interaction-round placeholder-round">
                       {round.childrenBlocks.map(childBlock => (
                          <InteractionBlock key={childBlock.id} block={childBlock} isBusy={isBusy}
                              onReview={onReview} onExecute={onExecute} onDebug={onDebug}
                              onApplyCorrectedCode={onApplyCorrectedCode} onInstallPackage={onInstallPackage}
                              onExplain={onExplain} expandedOutputs={expandedOutputs} onToggleOutputExpand={onToggleOutputExpand}
-                             // Props edit
                              editingBlockId={editingBlockId} currentEditingCode={currentEditingCode}
                              onToggleEditCode={onToggleEditCode} onUpdateEditingCode={onUpdateEditingCode}
                              onSaveEditedCode={onSaveEditedCode} onCancelEditCode={onCancelEditCode}
@@ -108,8 +115,7 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
                     <CollapsedInteractionBlock key={userBlockId + '-ch'} promptText={round.userBlock.data as string} blockId={userBlockId} timestamp={round.userBlock.timestamp} onToggleCollapse={onToggleCollapse}/>
                 ) : (
                     <InteractionBlock key={userBlockId + '-eh'} block={round.userBlock} isBusy={isBusy} onReview={()=>{}} onExecute={()=>{}} onDebug={()=>{}} onApplyCorrectedCode={()=>{}} onInstallPackage={async ()=>{}} onExplain={()=>{}} expandedOutputs={expandedOutputs} onToggleOutputExpand={onToggleOutputExpand}
-                                      // Props edit (user block ko cần)
-                                      editingBlockId={null} currentEditingCode={null}
+                                      editingBlockId={null} currentEditingCode={null} // User block ko co edit
                                       onToggleEditCode={() => {}} onUpdateEditingCode={() => {}}
                                       onSaveEditedCode={() => {}} onCancelEditCode={() => {}}
                                       data-block-id={round.userBlock.id}/>
@@ -120,7 +126,6 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
                             onReview={onReview} onExecute={onExecute} onDebug={onDebug}
                             onApplyCorrectedCode={onApplyCorrectedCode} onInstallPackage={onInstallPackage}
                             onExplain={onExplain} expandedOutputs={expandedOutputs} onToggleOutputExpand={onToggleOutputExpand}
-                            // Props edit
                             editingBlockId={editingBlockId} currentEditingCode={currentEditingCode}
                             onToggleEditCode={onToggleEditCode} onUpdateEditingCode={onUpdateEditingCode}
                             onSaveEditedCode={onSaveEditedCode} onCancelEditCode={onCancelEditCode}
@@ -140,12 +145,12 @@ const CenterArea: React.FC<CenterAreaProps> = (props) => {
   return (
     <main className="center-area-wrapper">
       <div className="top-bar">
-         <h2>ᓚᘏᗢ</h2>
+         <h2>Firewall AI Assistant</h2> {/* Ten app */}
          <button onClick={onToggleSidebar} className="icon-button subtle settings-trigger-button" title="Cài đặt" disabled={isBusy} aria-label="Mở cài đặt"><FiSettings /></button>
       </div>
       <div className="interaction-container" ref={scrollRef}>
         {renderConversation()}
-        <div ref={endOfMessagesRef} style={{ height: '1px' }} />
+        <div ref={endOfMessagesRef} style={{ height: '1px' }} /> {/* Phan tu de cuon toi */}
       </div>
       <UserInput
         prompt={prompt}

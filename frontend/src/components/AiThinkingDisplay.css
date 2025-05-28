@@ -1,0 +1,129 @@
+/* frontend/src/components/AiThinkingDisplay.css */
+.ai-thinking-container {
+    background-color: rgba(var(--accent-primary-rgb), 0.03); /* Nen nhe nhang hon ti */
+    border: 1px solid rgba(var(--accent-primary-rgb), 0.1);
+    border-radius: var(--border-radius-small); /* Giong border code block */
+    margin-top: calc(var(--spacing-unit) * 1.25);
+    margin-bottom: calc(var(--spacing-unit) * 1.25);
+    padding: calc(var(--spacing-unit) * 0.75) calc(var(--spacing-unit) * 1.25); /* Padding it hon chut */
+    /* Dat TRUOC block code/explanation chinh */
+}
+
+.thinking-toggle-button {
+    background: none;
+    border: none;
+    color: var(--text-accent);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 0.75);
+    font-weight: 500;
+    font-size: 0.8rem; /* Nho hon ti */
+    padding: calc(var(--spacing-unit) * 0.5) 0;
+    width: 100%;
+    text-align: left;
+}
+.thinking-toggle-button:hover {
+    color: var(--text-primary); /* Sang hon khi hover */
+}
+.thinking-toggle-button svg { /* Icon expand/collapse va icon Cpu */
+    font-size: 0.9rem; /* Nho hon ti */
+    transition: transform 0.2s ease-in-out;
+    flex-shrink: 0;
+}
+.thinking-toggle-button[aria-expanded="false"] svg:first-of-type { /* Icon chevron */
+    transform: rotate(-90deg);
+}
+
+.thinking-details-list {
+    margin-top: calc(var(--spacing-unit) * 1);
+    padding-left: calc(var(--spacing-unit) * 0.25); /* Thut le it hon */
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--spacing-unit) * 0.75); /* Gap nho hon giua cac item */
+    border-top: 1px solid rgba(var(--accent-primary-rgb), 0.1);
+    padding-top: calc(var(--spacing-unit) * 1);
+}
+
+.thought-item {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-small);
+    padding: calc(var(--spacing-unit) * 0.75) var(--spacing-unit); /* Padding nho hon */
+    font-size: 0.75rem; /* Font nho hon cho noi dung thought */
+    animation: fadeInThought 0.3s ease-out forwards;
+}
+
+@keyframes fadeInThought {
+    from { opacity: 0; transform: translateY(3px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.thought-header {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing-unit) * 0.75);
+    margin-bottom: calc(var(--spacing-unit) * 0.5);
+    color: var(--text-secondary);
+}
+.thought-icon {
+    font-size: 0.85rem; /* Icon nho hon */
+    flex-shrink: 0;
+}
+.thought-icon.tool-request-icon { color: var(--info-color); }
+.thought-icon.tool-result-icon.success { color: var(--success-color); }
+.thought-icon.tool-result-icon.error { color: var(--danger-color); }
+
+.thought-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.8rem; /* Dong bo voi button toggle */
+}
+.thought-timestamp {
+    margin-left: auto;
+    font-size: 0.65rem; /* Timestamp rat nho */
+    color: var(--text-muted);
+}
+
+.thought-content .thought-code-block div, /* Target PreTag ben trong SyntaxHighlighter */
+.thought-content .thought-pre-block {
+    background-color: var(--bg-code) !important;
+    border: 1px solid var(--border-color-secondary);
+    border-radius: var(--border-radius-small);
+    padding: calc(var(--spacing-unit) * 0.5) calc(var(--spacing-unit) * 0.75) !important; /* Padding nho hon */
+    margin: 0 !important;
+    font-size: 0.7rem !important; /* Font code rat nho */
+    line-height: 1.35 !important;
+    max-height: 150px; /* Gioi han chieu cao */
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    font-family: var(--code-font-family) !important;
+}
+.thought-content .thought-code-block code {
+    font-family: var(--code-font-family) !important;
+}
+
+.thought-item.error .thought-header,
+.thought-item.error .thought-title {
+    color: var(--danger-color);
+}
+.thought-item.error .thought-content .thought-pre-block,
+.thought-item.error .thought-content .thought-code-block div {
+    border-color: rgba(var(--danger-color-rgb), 0.3);
+    background-color: rgba(var(--danger-color-rgb), 0.05) !important;
+}
+
+.thought-result-details summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 0.7rem; /* Nho */
+    padding: 2px 0;
+}
+.thought-result-details summary:hover {
+    color: var(--text-primary);
+}
+.thought-result-details[open] summary {
+    margin-bottom: calc(var(--spacing-unit)*0.25);
+}
