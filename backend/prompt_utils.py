@@ -1,7 +1,8 @@
 # backend/prompt_utils.py
 import os
 import json
-from flask import current_app # Su dung current_app de lay logger va config
+from flask import current_app
+import logging # Them logging
 from .helpers import get_language_name
 
 # Ham doc nd file prompt instruction/example
@@ -113,7 +114,7 @@ def create_prompt(user_input, backend_os_name, target_os_name, file_type, fortig
         script_cli_guidance=script_cli_guidance,
         language_specific_examples=language_specific_examples,
         user_input=user_input,
-        fortigate_context_section=fortigate_context_section_str # Day la placeholder moi
+        fortigate_context_section=fortigate_context_section_str
     ).strip()
 
 # Ham tao prompt yeu cau Gemini danh gia code
@@ -167,7 +168,7 @@ def create_debug_prompt(original_prompt, failed_code, stdout, stderr, language, 
         failed_code=failed_code,
         processed_stdout=processed_stdout,
         processed_stderr=processed_stderr,
-        fortigate_context_section=fortigate_context_section_str # Placeholder moi
+        fortigate_context_section=fortigate_context_section_str
     ).strip()
 
 # Ham tao prompt yeu cau Gemini giai thich
@@ -230,4 +231,3 @@ def create_explain_prompt(content_to_explain, context, language=None):
         context_description=context_description,
         prompt_instruction=f"\n\n**Yêu cầu:** {final_prompt_instruction}"
     ).strip()
-

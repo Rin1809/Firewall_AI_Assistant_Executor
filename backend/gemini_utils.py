@@ -3,12 +3,13 @@ import os
 import re
 import google.generativeai as genai
 from google.generativeai.types import GenerationConfig
-from flask import current_app # Su dung current_app de lay config va logger
+from flask import current_app
+import logging # Them logging
 
 # Ham goi Gemini API
 def generate_response_from_gemini(full_prompt, model_config_param, is_for_review_or_debug=False):
     """Goi Gemini API va xu ly phan hoi."""
-    logger = current_app.logger # Lay logger tu current_app
+    logger = current_app.logger
     # Lay config tu current_app.config
     google_api_key_cfg = current_app.config.get('GOOGLE_API_KEY')
     safety_settings_map_cfg = current_app.config.get('SAFETY_SETTINGS_MAP')

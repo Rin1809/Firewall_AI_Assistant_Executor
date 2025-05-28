@@ -22,23 +22,83 @@
   padding-right: calc(var(--spacing-unit) * 0.5); /* Space for scrollbar */
 }
 
+/* Base style for each log line element */
 .log-content .log-line {
   margin: 0;
-  padding: 1px 0; /* Minimal vertical padding */
+  padding: 3px 0; /* Minimal vertical padding */
   white-space: pre-wrap; 
   word-break: break-all; 
   border-bottom: 1px dashed rgba(var(--text-muted-rgb, 133, 136, 140), 0.08); /* Very subtle line separator */
+
+  /* New: Flexbox for arranging log parts */
+  display: flex;
+  gap: 0.5em; /* Spacing between parts */
+  align-items: baseline; /* Align text baselines */
 }
 .log-content .log-line:last-child {
   border-bottom: none;
 }
+
 .log-content .log-placeholder {
   color: var(--text-muted);
   font-style: italic;
 }
 
-/* Define --text-muted-rgb if not already defined globally for the dashed border */
-/* This is better placed in App.css or a global variables file */
-/* :root { */
-  /* --text-muted-rgb: 133, 136, 140; /* From --text-muted: #85888c; */
-/* } */
+.log-unparsed {
+    color: var(--text-muted); /* Fallback style for unparsed lines */
+    font-style: italic;
+}
+
+/* Styles for individual log line elements */
+.log-timestamp {
+  color: var(--text-muted);
+  font-size: 0.75rem; /* Smaller timestamp */
+  flex-shrink: 0; /* Prevent shrinking */
+}
+
+.log-level {
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: var(--border-radius-small);
+  font-size: 0.7rem; /* Smaller level tag */
+  flex-shrink: 0;
+  text-transform: uppercase;
+  text-align: center;
+  min-width: 60px; /* Consistent width for level tags */
+}
+
+.log-level-info {
+  background-color: rgba(var(--info-color-rgb), 0.1);
+  color: var(--info-color);
+}
+
+.log-level-warning {
+  background-color: rgba(var(--warning-color-rgb), 0.1);
+  color: var(--warning-color);
+}
+
+.log-level-error,
+.log-level-critical {
+  background-color: rgba(var(--danger-color-rgb), 0.1);
+  color: var(--danger-color);
+}
+
+.log-level-debug {
+  background-color: rgba(var(--text-accent-rgb), 0.05);
+  color: var(--text-accent);
+}
+
+.log-message {
+  flex-grow: 1; /* Message takes up remaining space */
+  color: var(--text-secondary);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+.log-location {
+  color: var(--text-muted);
+  font-size: 0.75rem; /* Smaller file location */
+  flex-shrink: 0;
+  text-align: right;
+  min-width: 100px; /* Space for file and line number */
+}

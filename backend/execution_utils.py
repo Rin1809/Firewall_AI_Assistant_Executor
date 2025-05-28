@@ -6,12 +6,11 @@ import shlex
 import ctypes
 import tempfile
 import stat
-from datetime import datetime # Them datetime
+from datetime import datetime
 from netmiko import ConnectHandler, NetmikoTimeoutException, NetmikoAuthenticationException
 from paramiko.ssh_exception import SSHException
-from flask import current_app # Su dung current_app thay vi import app
-from .helpers import get_os_name
-import logging # Them logging neu current_app ko co san logger
+from flask import current_app
+import logging # Them logging
 
 # Lenh lay ctx FortiGate
 DEFAULT_FORTIGATE_CONTEXT_COMMANDS = [
@@ -100,7 +99,7 @@ def extract_code_block(raw_text, requested_extension, user_input_for_context="")
 
 def execute_fortigate_commands(commands_string, fortigate_config):
     """Thuc thi lenh tren FortiGate qua Netmiko."""
-    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    logger = current_app.logger
     if not fortigate_config or not isinstance(fortigate_config, dict):
         return {"output": "", "error": "Thiếu cấu hình FortiGate.", "return_code": -1}
 
@@ -184,7 +183,7 @@ def fetch_and_save_fortigate_context(fortigate_config, commands_to_fetch=None):
     """
     Lay ngu canh FortiGate, luu file log & tra ve noi dung.
     """
-    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    logger = current_app.logger
     if not fortigate_config or not isinstance(fortigate_config, dict):
         # Ko raise error o day de route co the xu ly, chi log
         logger.error("fetch_and_save_fortigate_context: Thieu hoac cau hinh FortiGate khong hop le.")
